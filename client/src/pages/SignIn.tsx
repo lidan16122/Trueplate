@@ -78,7 +78,7 @@ export function SignIn() {
         <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed border-line-dark font-mono text-label tracking-[0.08em] text-on-dark-dim">
           PHOTO — MEAL ON A TABLE
         </div>
-        <p className="text-[15px] leading-relaxed text-pretty text-on-dark">
+        <p className="text-caption leading-relaxed text-pretty text-on-dark">
           Every estimate is a proposal. You confirm the portion before anything is saved.
         </p>
       </aside>
