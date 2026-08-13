@@ -290,11 +290,25 @@ class TestSessionListing:
 
         assert [s.device_label for s in await store.list_sessions(USER)] == ["Laptop"]
 
-    async def test_ownership_check_blocks_cross_user_revocation(self, store: RefreshTokenStore):
+    async def test_revoking_someone_elses_session_does_nothing(
+        self, store: RefreshTokenStore, redis
+    ):
+        """Authorisation is the operation, not a check in front of it.
+
+        Knowing a family id must not be enough to sign another user out.
+        """
         theirs = await store.create_session(user_id=OTHER_USER)
 
-        assert await store.family_belongs_to(theirs.family_id, OTHER_USER) is True
-        assert await store.family_belongs_to(theirs.family_id, USER) is False
+        assert await store.revoke_family(theirs.family_id, owner_id=USER) is False
+        # Untouched: still live, and still listed for its real owner.
+        assert await redis.exists(keys.refresh_family_key(theirs.family_id)) == 1
+        assert [s.family_id for s in await store.list_sessions(OTHER_USER)] == [theirs.family_id]
+
+    async def test_revoking_your_own_session_succeeds(self, store: RefreshTokenStore):
+        mine = await store.create_session(user_id=USER)
+
+        assert await store.revoke_family(mine.family_id, owner_id=USER) is True
+        assert await store.list_sessions(USER) == []
 
     async def test_no_sessions_is_an_empty_list(self, store: RefreshTokenStore):
         assert await store.list_sessions(str(uuid.uuid4())) == []
