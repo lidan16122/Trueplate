@@ -1,24 +1,23 @@
+import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate } from "react-router";
 
-import { ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
-import { Eyebrow } from "@/components/ui";
+import { AuthLoading, ProtectedRoute, PublicOnlyRoute } from "@/components/ProtectedRoute";
+import { AddFood } from "@/pages/AddFood";
+import { Confirm } from "@/pages/Confirm";
+import { FoodLog } from "@/pages/FoodLog";
+import { Onboarding } from "@/pages/Onboarding";
+import { Profile } from "@/pages/Profile";
 import { SignIn } from "@/pages/SignIn";
+import { TargetReveal } from "@/pages/TargetReveal";
+import { Today } from "@/pages/Today";
 
-/**
- * Placeholder for a screen that lands in the next change.
- *
- * These exist so sign-in has somewhere to land. Without them the destinations
- * `SignIn` navigates to fall through to the catch-all, which sends the user to
- * `/signin`, where `PublicOnlyRoute` sees a signed-in user and bounces them
- * straight back — an infinite redirect on every successful sign-in.
- */
-function ComingSoon({ name }: { name: string }) {
-  return (
-    <div className="flex min-h-dvh flex-col items-center justify-center gap-3 bg-page">
-      <Eyebrow>{name}</Eyebrow>
-      <p className="text-caption text-subtle">This screen lands in the next change.</p>
-    </div>
-  );
+// Recharts is ~400 kB and used by exactly one screen — a placeholder at that.
+// Loading it eagerly would make every cold start pay for a chart nobody has
+// navigated to yet.
+const Progress = lazy(() => import("@/pages/Progress").then((m) => ({ default: m.Progress })));
+
+function Lazy({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<AuthLoading />}>{children}</Suspense>;
 }
 
 export const router = createBrowserRouter([
@@ -29,8 +28,22 @@ export const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
-      { path: "/today", element: <ComingSoon name="Today" /> },
-      { path: "/onboarding", element: <ComingSoon name="Onboarding" /> },
+      { path: "/onboarding", element: <Onboarding /> },
+      { path: "/onboarding/done", element: <TargetReveal /> },
+      { path: "/today", element: <Today /> },
+      { path: "/add", element: <AddFood /> },
+      { path: "/add/confirm", element: <Confirm /> },
+      { path: "/profile", element: <Profile /> },
+      // Not in the design yet — placeholders so the routes exist.
+      { path: "/log", element: <FoodLog /> },
+      {
+        path: "/progress",
+        element: (
+          <Lazy>
+            <Progress />
+          </Lazy>
+        ),
+      },
     ],
   },
   { path: "/", element: <Navigate to="/today" replace /> },
