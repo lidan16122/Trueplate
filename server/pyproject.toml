@@ -1,7 +1,48 @@
 [project]
-name = "server"
+name = "trueplate-server"
 version = "0.1.0"
+description = "Trueplate API — nutrition tracking with photo-based food logging"
 requires-python = ">=3.14"
 dependencies = [
     "fastapi[standard]>=0.141.1",
+    # ORM + migrations. psycopg3 rather than asyncpg: broader wheel coverage
+    # on Python 3.14 / Windows.
+    "sqlalchemy[asyncio]>=2.0.36",
+    "psycopg[binary,pool]>=3.2",
+    "alembic>=1.14",
+    # Async Redis client (redis-py ships asyncio support in the main package).
+    "redis>=5.2",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    # Access-token signing.
+    "pyjwt>=2.10",
+    # Google ID-token verification.
+    # Vision + text food detection (schemas only for now; call not yet wired).
+    "anthropic>=0.40",
+    "google-auth[requests]>=2.35",
 ]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.22.1",
+    "fakeredis[lua]>=2.37.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# Migrations follow Alembic's own generated layout; reflowing them makes diffs
+# against future autogenerate output unreadable.
+"alembic/versions/*.py" = ["E501"]
