@@ -130,6 +130,10 @@ return {'OK', user_id, family_id}
 
 # KEYS[1] rt:family:<id>
 # ARGV[1] token prefix   ARGV[2] user prefix
+# ARGV[3] is an optional owner id. When present the script revokes only a family
+# that user owns, so authorisation is the operation rather than a check in front
+# of it — a foreign family id is a no-op, with no window between checking and
+# acting and nothing a caller can forget to do.
 _REVOKE_FAMILY_LUA = """
 local family = redis.call('HGETALL', KEYS[1])
 if #family == 0 then
@@ -138,6 +142,11 @@ end
 
 local data = {}
 for i = 1, #family, 2 do data[family[i]] = family[i + 1] end
+
+local owner = ARGV[3]
+if owner ~= '' and data['user_id'] ~= owner then
+  return 0
+end
 
 if data['current_token_hash'] then
   redis.call('DEL', ARGV[1] .. data['current_token_hash'])
@@ -282,11 +291,17 @@ class RefreshTokenStore:
 
     # ---------- revoke ----------
 
-    async def revoke_family(self, family_id: str) -> bool:
-        """Kill one device/session. Also the theft response."""
+    async def revoke_family(self, family_id: str, *, owner_id: str | None = None) -> bool:
+        """Kill one device/session. Also the theft response.
+
+        Pass ``owner_id`` when the caller is acting for a specific user: the
+        revoke then applies only if that user owns the family, and returns False
+        otherwise. Theft detection omits it, because there the family is already
+        known from the presented token.
+        """
         revoked = await self._revoke_family_script(
             keys=[keys.refresh_family_key(family_id)],
-            args=[keys.REFRESH_TOKEN_PREFIX, keys.REFRESH_USER_PREFIX],
+            args=[keys.REFRESH_TOKEN_PREFIX, keys.REFRESH_USER_PREFIX, owner_id or ""],
         )
         return bool(revoked)
 
@@ -350,7 +365,3 @@ class RefreshTokenStore:
         sessions.sort(key=lambda s: s.last_used_at, reverse=True)
         return sessions
 
-    async def family_belongs_to(self, family_id: str, user_id: str) -> bool:
-        """Guard so one user cannot revoke another user's device."""
-        owner = await self._redis.hget(keys.refresh_family_key(family_id), "user_id")
-        return owner == user_id
