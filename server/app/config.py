@@ -1,8 +1,7 @@
-from functools import lru_cache
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # app/config.py -> app -> server -> repo root
@@ -39,11 +38,19 @@ class Settings(BaseSettings):
     # are long enough that a down dependency looks like a hang rather than an
     # outage, which is far harder to diagnose.
     db_connect_timeout_seconds: int = 3
+    # Bounds a statement that hangs *after* connecting, which the connect
+    # timeout cannot see. Generous enough for a cold managed instance.
+    db_statement_timeout_seconds: int = 10
     redis_timeout_seconds: int = 2
     health_check_timeout_seconds: float = 3.0
 
     # ---------- Auth ----------
-    jwt_secret_key: str = "dev-only-insecure-secret-change-me"
+    # Deliberately has no default, and a length floor rather than a bare `str`.
+    # The signature is the access token's entire security, so a deploy that
+    # forgets this var must fail to boot rather than sign real tokens with a
+    # value published in this repo. `str` alone is not enough: an empty
+    # `JWT_SECRET_KEY=` in a compose file or CI secret satisfies it.
+    jwt_secret_key: str = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 30
@@ -107,9 +114,8 @@ class Settings(BaseSettings):
         return self.refresh_token_ttl_days * 24 * 60 * 60
 
 
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-
-
-settings = get_settings()
+# Resolved once, at import. This is deliberately a plain module-level singleton
+# and not a cached accessor: the engine and the Redis pool are both built from it
+# at import time too, so a "swap the settings" seam would be a lie — nothing
+# downstream could observe the swap without reloading the modules.
+settings = Settings()

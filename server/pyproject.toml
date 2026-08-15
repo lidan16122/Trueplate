@@ -16,9 +16,9 @@ dependencies = [
     "pydantic-settings>=2.7",
     # Access-token signing.
     "pyjwt>=2.10",
-    # Google ID-token verification.
     # Vision + text food detection (schemas only for now; call not yet wired).
     "anthropic>=0.40",
+    # Google ID-token verification.
     "google-auth[requests]>=2.35",
 ]
 

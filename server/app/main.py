@@ -5,7 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.router import api_router, health_router
+from app.api.router import api_router
+from app.api.routes import health
 from app.config import settings
 from app.db.session import engine
 from app.stores.client import close_redis_pool
@@ -42,7 +43,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(health_router)
+    # Health at the root, unversioned — probes should not track an API version.
+    app.include_router(health.router)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
     return app
 

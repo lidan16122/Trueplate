@@ -30,11 +30,13 @@ htmlcov/
 node_modules/
 .pnp
 .pnp.js
-dist/
 dist-ssr/
-build/
 coverage/
 *.local
+
+# ---------- Agent tooling ----------
+# launch.json is shared; local overrides and per-machine settings are not.
+.claude/settings.local.json
 
 npm-debug.log*
 yarn-debug.log*
