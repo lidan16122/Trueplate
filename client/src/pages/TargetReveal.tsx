@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 
-import { ErrorNote, Eyebrow, Stat } from "@/components/ui";
+import { ErrorNote, Eyebrow, ProgressBar, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { GoalType, OnboardingPayload, Sex, Targets } from "@/types/api";
+import type { OnboardingPayload, Targets } from "@/types/api";
 
-import type { WizardAnswers } from "./wizardSteps";
+import { type CompletedAnswers, isComplete, type WizardAnswers } from "./wizardSteps";
 
-function toPayload(answers: WizardAnswers): OnboardingPayload {
+function toPayload(answers: CompletedAnswers): OnboardingPayload {
   return {
     age: answers.age,
-    sex: answers.sex as Sex,
+    sex: answers.sex,
     height_cm: answers.height,
     weight_kg: answers.weight,
-    goal_type: answers.goal as GoalType,
+    goal_type: answers.goal,
     target_weight_kg:
       answers.goal === "maintain"
         ? null
@@ -40,7 +40,7 @@ export function TargetReveal() {
   // moment is a better trade than two implementations that can disagree about
   // what the user is being asked to eat.
   useEffect(() => {
-    if (!answers) return;
+    if (!answers || !isComplete(answers)) return;
     let cancelled = false;
 
     api.onboarding
@@ -58,7 +58,7 @@ export function TargetReveal() {
   }, [answers]);
 
   const start = useCallback(async () => {
-    if (!answers) return;
+    if (!answers || !isComplete(answers)) return;
     setSaving(true);
     setError(null);
     try {
@@ -70,8 +70,8 @@ export function TargetReveal() {
     }
   }, [answers, navigate]);
 
-  // Reached directly, with no answers to show.
-  if (!answers) return <Navigate to="/onboarding" replace />;
+  // Reached directly, or with the wizard half-finished.
+  if (!answers || !isComplete(answers)) return <Navigate to="/onboarding" replace />;
 
   const targetCalories = targets?.target_calories ?? 0;
   const protein = targets?.protein_g ?? 0;
@@ -114,9 +114,7 @@ export function TargetReveal() {
                     {macro.grams} g · {pct}%
                   </span>
                 </div>
-                <div className="h-1.5 overflow-hidden rounded-bar bg-fill">
-                  <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
-                </div>
+                <ProgressBar value={macro.kcal} total={targetCalories} height={6} />
               </div>
             );
           })}

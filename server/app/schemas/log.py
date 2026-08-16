@@ -1,5 +1,6 @@
 import uuid
 from datetime import date
+from typing import NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,10 +13,25 @@ from app.schemas.detection import NutritionFacts
 SURE_THRESHOLD = 0.75
 
 
-def confidence_label(value: float | None) -> str | None:
+class ConfidenceView(NamedTuple):
+    """How one confidence score is shown. Both halves, or they drift apart.
+
+    The label and the "is this rough" flag are the same decision read twice —
+    computing them separately means a change to the threshold has to be made in
+    two places and will eventually be made in one.
+    """
+
+    label: str | None
+    is_rough: bool
+
+
+def confidence_view(value: float | None) -> ConfidenceView:
     if value is None:
-        return None
-    return "Fairly sure" if value >= SURE_THRESHOLD else "Rough guess"
+        # Barcode and manual entries are not estimates, so there is nothing to
+        # be confident about and nothing to warn the user of.
+        return ConfidenceView(label=None, is_rough=False)
+    sure = value >= SURE_THRESHOLD
+    return ConfidenceView(label="Fairly sure" if sure else "Rough guess", is_rough=not sure)
 
 
 class FoodEntryOut(BaseModel):

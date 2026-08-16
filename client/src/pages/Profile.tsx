@@ -4,18 +4,8 @@ import { Link, useNavigate } from "react-router";
 import { useAuth } from "@/auth/useAuth";
 import { ErrorNote, Eyebrow, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { GoalType, Profile as ProfileData, Sex, Session, Targets } from "@/types/api";
-
-const SEX_OPTIONS: { id: Sex; label: string }[] = [
-  { id: "female", label: "Female" },
-  { id: "male", label: "Male" },
-];
-
-const GOAL_OPTIONS: { id: GoalType; label: string }[] = [
-  { id: "lose", label: "Lose weight, maintain muscle" },
-  { id: "maintain", label: "Maintain" },
-  { id: "gain", label: "Gain weight and muscle" },
-];
+import { GOAL_OPTIONS, SEX_OPTIONS } from "@/lib/labels";
+import type { Profile as ProfileData, Session, Targets } from "@/types/api";
 
 export function Profile() {
   const { user, signOut, refreshUser } = useAuth();

@@ -2,7 +2,6 @@
 
 import asyncio
 import uuid
-from datetime import UTC, datetime
 
 import pytest
 
@@ -10,22 +9,12 @@ from app.config import settings
 from app.stores import keys
 from app.stores.access_tokens import AccessTokenDenylist
 from app.stores.refresh_tokens import RefreshTokenStore, hash_token
+from tests.helpers import age_tombstone
 
 USER = str(uuid.uuid4())
 OTHER_USER = str(uuid.uuid4())
 
 
-async def age_tombstone(redis, raw_token: str, seconds: float = 3600) -> None:
-    """Backdate a rotated token's tombstone past the reuse grace window.
-
-    Replays inside the window are deliberately forgiven, so exercising genuine
-    theft detection means making the rotation look old.
-    """
-    await redis.hset(
-        keys.refresh_used_key(hash_token(raw_token)),
-        "rotated_at",
-        str(datetime.now(UTC).timestamp() - seconds),
-    )
 
 
 class TestIssuing:

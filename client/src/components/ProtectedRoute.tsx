@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { Navigate, Outlet, useLocation } from "react-router";
 
 import { useAuth } from "@/auth/useAuth";
@@ -35,4 +36,15 @@ export function PublicOnlyRoute() {
   if (user) return <Navigate to="/today" replace />;
 
   return <Outlet />;
+}
+
+/**
+ * Suspense boundary for a route-level lazy import.
+ *
+ * Beside AuthLoading, which is its fallback, and out of the router so that file
+ * exports only the router — a module mixing a component with a non-component
+ * export defeats fast refresh for everything in it.
+ */
+export function Lazy({ children }: { children: React.ReactNode }) {
+  return <Suspense fallback={<AuthLoading />}>{children}</Suspense>;
 }
