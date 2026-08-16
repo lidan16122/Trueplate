@@ -1,13 +1,136 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@import "tailwindcss";
+
+/* Self-hosted rather than Google's CDN link: a PWA has to render offline, and
+   a font that only arrives over the network is a flash of fallback text every
+   time the connection is bad. */
+@import "@fontsource/libre-franklin/400.css";
+@import "@fontsource/libre-franklin/500.css";
+@import "@fontsource/libre-franklin/600.css";
+@import "@fontsource/libre-franklin/700.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* Design tokens, lifted from Trueplate.dc.html.
+   Tailwind v4 is CSS-first: these become `bg-ink`, `text-muted`, `rounded-card`
+   and so on with no config file. */
+@theme {
+  /* --- ink family: primary text, buttons, dark panels --- */
+  /* Also hard-coded in three places CSS variables cannot reach: the PWA
+     manifest's theme_color in vite.config.ts, the theme-color meta tag in
+     index.html, and the favicon's fill in public/favicon.svg. Change all four
+     together. */
+  --color-ink: #14161a;
+  --color-ink-2: #1e2126; /* hover on dark */
+  --color-ink-3: #26292e;
+  --color-line-dark: #3a3d42; /* borders inside dark panels */
+
+  /* --- text on light --- */
+  --color-muted: #5c5c5c; /* body copy */
+  --color-subtle: #8a8a8a; /* secondary labels */
+  --color-faint: #a3a3a1; /* tertiary, mono micro-labels */
+
+  /* --- text on dark --- */
+  --color-on-dark: #a8acb2;
+  --color-on-dark-dim: #7d8188;
+  --color-on-dark-faint: #5d6167;
+
+  /* --- accent --- */
+  --color-accent: #2f6b4f; /* progress fills, hover, "Fairly sure" */
+  --color-accent-soft: #7dc4a0; /* accent against ink backgrounds */
+  --color-warn: #b07d2b; /* "Rough guess" */
+
+  /* --- surfaces --- */
+  --color-page: #f0f0ef;
+  --color-surface: #ffffff;
+  --color-fill: #ececeb; /* progress-bar track */
+  --color-wash: #f2f2f1; /* subtle hover */
+  --color-readonly: #f5f5f3; /* disabled input background */
+
+  /* --- borders --- */
+  --color-line: #e4e4e2; /* default control border */
+  --color-line-2: #ededeb; /* dividers */
+  --color-line-soft: #e8e8e6; /* date chips */
+  --color-hairline: #dedede; /* dashed empty states */
+
+  /* --- type --- */
+  --font-sans: "Libre Franklin", Helvetica, Arial, sans-serif;
+  /* Every number in this app is mono. It is the design's strongest signature —
+     it makes figures scannable and stops them reflowing as digits change. */
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* Sizes are tokens for the same reason colours are: `text-[13px]` in a
+     component is a decision made twice, and the scale drifts one screen at a
+     time. Named for the role rather than the pixel count, so a change to the
+     scale does not turn every name into a lie. */
+  --text-micro: 11px; /* macro sub-labels */
+  --text-label: 12px; /* uppercase eyebrows */
+  --text-caption: 13px; /* secondary rows */
+  --text-body: 14px; /* default UI text */
+  --text-lead: 16px; /* emphasised body */
+  --text-title: 19px; /* card titles, brand mark */
+  --text-figure: 34px; /* the big calorie number */
+
+  /* --- radii --- */
+  --radius-bar: 3px;
+  --radius-chip: 6px;
+  --radius-badge: 9px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-card: 14px; /* default control */
+  --radius-lg: 16px;
+  --radius-xl: 18px;
+  --radius-2xl: 22px;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-page);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+
+  a:hover {
+    color: var(--color-ink);
+  }
+
+  button {
+    font-family: inherit;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  input {
+    font-family: inherit;
+  }
+
+  /* Numeric inputs in this app are grams and kilograms typed by hand. The
+     spinner arrows are too small to hit on a phone and steal horizontal space
+     from the value. */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
 }

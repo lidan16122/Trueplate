@@ -1,7 +1,8 @@
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import DateTime, Float, MetaData, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Deterministic constraint names. Without this, Alembic autogenerates unnamed
@@ -33,3 +34,42 @@ class TimestampMixin:
         onupdate=func.now(),
         nullable=False,
     )
+
+
+class NutritionPer100gMixin:
+    """The canonical nutrition basis: always per 100 g, never a total.
+
+    Carried by every table that stores nutrition — ``foods``,
+    ``barcode_products``, and the ``food_entries`` snapshot. Inheriting it makes
+    the shared basis structural: a table that wants nutrition gets exactly these
+    columns, so the three cannot drift apart one edit at a time, and a
+    pre-multiplied total has nowhere to live.
+    """
+
+    kcal_per_100g: Mapped[float] = mapped_column(Float, nullable=False)
+    protein_g_per_100g: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    carbs_g_per_100g: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    fat_g_per_100g: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    fiber_g_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sugar_g_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sodium_mg_per_100g: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    def scaled_to(self, grams: float) -> ScaledNutrition:
+        """Resolve this per-100 g row to an actual portion."""
+        factor = grams / 100.0
+        return ScaledNutrition(
+            calories=self.kcal_per_100g * factor,
+            protein_g=self.protein_g_per_100g * factor,
+            carbs_g=self.carbs_g_per_100g * factor,
+            fat_g=self.fat_g_per_100g * factor,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ScaledNutrition:
+    """A per-100 g row resolved against a gram quantity. Never persisted."""
+
+    calories: float
+    protein_g: float
+    carbs_g: float
+    fat_g: float
