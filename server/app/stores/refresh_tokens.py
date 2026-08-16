@@ -180,14 +180,30 @@ class RotationResult:
     raw_token: str | None = None
 
 
+def _parse_iso(value: str) -> datetime:
+    """Read a stored timestamp back as a datetime.
+
+    Redis holds these as ISO strings; both writers (`create_session` and the
+    rotate script) produce them the same way. A record predating a format change
+    — or one truncated by hand — must not take down the session list, so an
+    unreadable value falls back to the epoch and simply sorts last.
+    """
+    try:
+        return datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return datetime.fromtimestamp(0, UTC)
+
+
 @dataclass(frozen=True, slots=True)
 class SessionInfo:
     family_id: str
     device_label: str
     user_agent: str
     ip: str
-    created_at: str
-    last_used_at: str
+    # Real datetimes, not the raw strings. They cross an API boundary, and
+    # sorting the string form only worked while every value shared a format.
+    created_at: datetime
+    last_used_at: datetime
 
 
 class RefreshTokenStore:
@@ -354,8 +370,8 @@ class RefreshTokenStore:
                     device_label=record.get("device_label", "Unknown device"),
                     user_agent=record.get("user_agent", ""),
                     ip=record.get("ip", ""),
-                    created_at=record.get("created_at", ""),
-                    last_used_at=record.get("last_used_at", ""),
+                    created_at=_parse_iso(record.get("created_at", "")),
+                    last_used_at=_parse_iso(record.get("last_used_at", "")),
                 )
             )
 

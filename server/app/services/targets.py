@@ -1,5 +1,6 @@
 """Presenting a target breakdown, and persisting the goal it belongs to."""
 
+import uuid
 from datetime import UTC, date, datetime
 
 from sqlalchemy import select, update
@@ -11,7 +12,7 @@ from app.core.nutrition import (
     age_from_birth_date,
     calculate_targets,
 )
-from app.db.models import Goal, UserProfile
+from app.db.models import Goal, UserProfile, WeightEntry
 from app.enums import GoalType
 from app.schemas.onboarding import MathRow, TargetsOut
 
@@ -89,9 +90,7 @@ def to_targets_out(t: TargetBreakdown, sex: str) -> TargetsOut:
     )
 
 
-async def latest_weight_kg(session: AsyncSession, user_id) -> float | None:
-    from app.db.models import WeightEntry
-
+async def latest_weight_kg(session: AsyncSession, user_id: uuid.UUID) -> float | None:
     return await session.scalar(
         select(WeightEntry.weight_kg)
         .where(WeightEntry.user_id == user_id)
@@ -100,14 +99,14 @@ async def latest_weight_kg(session: AsyncSession, user_id) -> float | None:
     )
 
 
-async def active_goal(session: AsyncSession, user_id) -> Goal | None:
+async def active_goal(session: AsyncSession, user_id: uuid.UUID) -> Goal | None:
     return await session.scalar(select(Goal).where(Goal.user_id == user_id, Goal.ends_on.is_(None)))
 
 
 async def recompute_and_store_goal(
     session: AsyncSession,
     *,
-    user_id,
+    user_id: uuid.UUID,
     profile: UserProfile,
     weight_kg: float,
     goal_type: str,

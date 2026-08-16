@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
+import type { GoalType, Sex } from "@/types/api";
+
 
 import {
   clampValue,
@@ -22,15 +24,21 @@ export function Onboarding() {
 
   const steps = useMemo(() => visibleSteps(answers.goal), [answers.goal]);
   const step = resolveStep(steps[Math.min(index, steps.length - 1)], answers);
-  const value = stepValue(step, answers);
-  const isNumber = step.kind === "number";
+  // Narrow once. Everything that reaches for a number-only field (min, max,
+  // decimals) or a choice-only field (choices) goes through one of these, so the
+  // union is resolved in a single place rather than cast at each use.
+  const numberStep = step.kind === "number" ? step : null;
+  const choiceStep = step.kind === "choice" ? step : null;
+  const value = numberStep ? stepValue(numberStep, answers) : 0;
+  const isNumber = numberStep !== null;
 
   const setNumber = useCallback(
     (next: number) => {
-      const clamped = clampValue(step, next);
-      setAnswers((prev) => ({ ...prev, [step.key]: clamped }));
+      if (!numberStep) return;
+      const clamped = clampValue(numberStep, next);
+      setAnswers((prev) => ({ ...prev, [numberStep.key]: clamped }));
     },
-    [step],
+    [numberStep],
   );
 
   const commitDraft = useCallback(() => {
@@ -42,14 +50,14 @@ export function Onboarding() {
 
   const goNext = useCallback(() => {
     commitDraft();
-    if (step.kind === "choice" && !answers[step.key as "sex" | "goal"]) return;
+    if (choiceStep && !answers[choiceStep.key]) return;
 
     if (index >= steps.length - 1) {
       navigate("/onboarding/done", { state: { answers } });
       return;
     }
     setIndex((i) => i + 1);
-  }, [commitDraft, step, answers, index, steps.length, navigate]);
+  }, [commitDraft, choiceStep, answers, index, steps.length, navigate]);
 
   const goBack = useCallback(() => {
     if (index === 0) return;
@@ -67,43 +75,47 @@ export function Onboarding() {
       } else if (isNumber && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
         event.preventDefault();
         setDraft(null);
-        setNumber(value + (event.key === "ArrowUp" ? 1 : -1) * (step.step ?? 1));
+        setNumber(value + (event.key === "ArrowUp" ? 1 : -1) * (numberStep?.step ?? 1));
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goNext, isNumber, setNumber, value, step.step]);
+  }, [goNext, isNumber, setNumber, value, numberStep]);
 
   const chooseOption = useCallback(
-    (id: string) => {
-      setAnswers((prev) => {
-        const next = { ...prev, [step.key]: id } as WizardAnswers;
-        // Switching goal invalidates a target weight picked for the old
-        // direction — it would now be on the wrong side of current weight.
-        if (step.key === "goal") next.targetWeight = null;
-        return next;
-      });
+    (id: Sex | GoalType) => {
+      if (!choiceStep) return;
+      setAnswers((prev) =>
+        choiceStep.key === "sex"
+          ? { ...prev, sex: id as Sex }
+          : // Switching goal invalidates a target weight picked for the old
+            // direction — it would now be on the wrong side of current weight.
+            { ...prev, goal: id as GoalType, targetWeight: null },
+      );
       // Brief pause so the selection is visibly registered before moving on.
       setTimeout(() => setIndex((i) => Math.min(i + 1, steps.length - 1)), 140);
     },
-    [step.key, steps.length],
+    [choiceStep, steps.length],
   );
 
   // The final step hands off to the reveal screen, which shows the target and
   // is where the answers are actually saved.
   const isLastStep = index >= steps.length - 1;
-  const blocked = step.kind === "choice" && !answers[step.key as "sex" | "goal"];
-  const displayValue = draft ?? formatValue(step, value);
+  const blocked = choiceStep !== null && !answers[choiceStep.key];
+  const displayValue = draft ?? (numberStep ? formatValue(numberStep, value) : "");
 
   const summaryRows = steps.map((s, i) => {
-    const answered = s.kind === "number" ? i <= index : Boolean(answers[s.key as "sex" | "goal"]);
+    const answered = s.kind === "number" ? i <= index : Boolean(answers[s.key]);
     let shown = "—";
     if (answered) {
       if (s.key === "sex") shown = SEX_LABEL[answers.sex ?? ""] ?? "—";
       else if (s.key === "goal") shown = GOAL_LABEL[answers.goal ?? ""] ?? "—";
       else {
         const resolved = resolveStep(s, answers);
-        shown = `${formatValue(resolved, stepValue(resolved, answers))} ${resolved.unit ?? ""}`.trim();
+        if (resolved.kind === "number") {
+          const shownValue = formatValue(resolved, stepValue(resolved, answers));
+          shown = `${shownValue} ${resolved.unit ?? ""}`.trim();
+        }
       }
     }
     return { step: s, index: i, label: s.summary, value: shown, answered, active: i === index };
@@ -182,7 +194,7 @@ export function Onboarding() {
             )}
           </div>
 
-          {isNumber ? (
+          {numberStep ? (
             <div className="flex flex-col gap-4">
               <div className="flex items-center gap-4">
                 <input
@@ -193,13 +205,13 @@ export function Onboarding() {
                   aria-label={step.summary}
                   className="tabular w-[190px] border-b border-line bg-transparent pb-2 font-mono text-[64px] leading-none font-medium tracking-[-0.04em] text-ink outline-none focus:border-accent md:text-[88px]"
                 />
-                <span className="text-lead text-subtle">{step.unit}</span>
+                <span className="text-lead text-subtle">{numberStep.unit}</span>
 
                 <div className="ml-auto flex gap-2">
                   <button
                     onClick={() => {
                       setDraft(null);
-                      setNumber(value - (step.step ?? 1));
+                      setNumber(value - (numberStep.step ?? 1));
                     }}
                     className="flex h-11 w-11 items-center justify-center rounded-card border border-line text-[18px] text-ink transition-colors hover:bg-wash"
                     aria-label="Decrease"
@@ -209,7 +221,7 @@ export function Onboarding() {
                   <button
                     onClick={() => {
                       setDraft(null);
-                      setNumber(value + (step.step ?? 1));
+                      setNumber(value + (numberStep.step ?? 1));
                     }}
                     className="flex h-11 w-11 items-center justify-center rounded-card border border-line text-[18px] text-ink transition-colors hover:bg-wash"
                     aria-label="Increase"
@@ -219,13 +231,13 @@ export function Onboarding() {
                 </div>
               </div>
               <p className="font-mono text-caption text-faint">
-                ↑ ↓ to step{step.hint ? ` · ${step.hint}` : ""}
+                ↑ ↓ to step{numberStep.hint ? ` · ${numberStep.hint}` : ""}
               </p>
             </div>
           ) : (
             <div className="flex max-w-[560px] flex-col gap-2.5">
-              {step.choices?.map((choice) => {
-                const selected = answers[step.key as "sex" | "goal"] === choice.id;
+              {choiceStep?.choices.map((choice) => {
+                const selected = choiceStep !== null && answers[choiceStep.key] === choice.id;
                 return (
                   <button
                     key={choice.id}

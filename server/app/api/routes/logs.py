@@ -9,7 +9,6 @@ from app.core.deps import CurrentUser, DbSession
 from app.db.models import DailyLog, FoodEntry
 from app.enums import meal_sort_key
 from app.schemas.log import (
-    SURE_THRESHOLD,
     CreateEntriesRequest,
     DayLogOut,
     DaySummary,
@@ -17,7 +16,7 @@ from app.schemas.log import (
     MealGroupOut,
     NutritionFacts,
     UpdateEntryRequest,
-    confidence_label,
+    confidence_view,
 )
 from app.services.targets import active_goal
 
@@ -25,6 +24,7 @@ router = APIRouter(prefix="/logs", tags=["logs"])
 
 
 def _entry_out(entry: FoodEntry) -> FoodEntryOut:
+    confidence = confidence_view(entry.detection_confidence)
     return FoodEntryOut(
         id=entry.id,
         name=entry.name,
@@ -38,9 +38,8 @@ def _entry_out(entry: FoodEntry) -> FoodEntryOut:
         detection_method=entry.detection_method,
         nutrition_source=entry.nutrition_source,
         detection_confidence=entry.detection_confidence,
-        confidence_label=confidence_label(entry.detection_confidence),
-        is_rough=entry.detection_confidence is not None
-        and entry.detection_confidence < SURE_THRESHOLD,
+        confidence_label=confidence.label,
+        is_rough=confidence.is_rough,
     )
 
 
@@ -67,12 +66,17 @@ async def _get_or_create_log(db, user_id: uuid.UUID, log_date: date) -> DailyLog
     return log
 
 
-@router.get("/{log_date}", response_model=DayLogOut)
-async def read_day(log_date: date, user: CurrentUser, db: DbSession) -> DayLogOut:
-    """One day, grouped into meals in the design's fixed order."""
+async def _assemble_day(db, user_id: uuid.UUID, log_date: date) -> DayLogOut:
+    """Build the day view.
+
+    A plain function rather than the route handler, because two routes need it
+    — reading a day, and returning the day after adding to it. Calling one
+    handler from another ties them together through FastAPI's signature, so the
+    dependencies of one become the caller's problem.
+    """
     log = await db.scalar(
         select(DailyLog)
-        .where(DailyLog.user_id == user.id, DailyLog.log_date == log_date)
+        .where(DailyLog.user_id == user_id, DailyLog.log_date == log_date)
         .options(selectinload(DailyLog.entries))
     )
     entries = list(log.entries) if log else []
@@ -90,7 +94,7 @@ async def read_day(log_date: date, user: CurrentUser, db: DbSession) -> DayLogOu
         for meal, items in sorted(buckets.items(), key=lambda kv: meal_sort_key(kv[0]))
     ]
 
-    goal = await active_goal(db, user.id)
+    goal = await active_goal(db, user_id)
 
     return DayLogOut(
         log_date=log_date,
@@ -101,6 +105,12 @@ async def read_day(log_date: date, user: CurrentUser, db: DbSession) -> DayLogOu
         target_carbs_g=goal.target_carbs_g if goal else None,
         target_fat_g=goal.target_fat_g if goal else None,
     )
+
+
+@router.get("/{log_date}", response_model=DayLogOut)
+async def read_day(log_date: date, user: CurrentUser, db: DbSession) -> DayLogOut:
+    """One day, grouped into meals in the design's fixed order."""
+    return await _assemble_day(db, user.id, log_date)
 
 
 @router.get("", response_model=list[DaySummary])
@@ -182,7 +192,7 @@ async def add_entries(
         )
 
     await db.commit()
-    return await read_day(log_date, user, db)
+    return await _assemble_day(db, user.id, log_date)
 
 
 @router.patch("/entries/{entry_id}", response_model=FoodEntryOut)

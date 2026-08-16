@@ -5,7 +5,7 @@ import pytest
 from app.config import settings
 from app.services import google_oauth
 from app.services.google_oauth import GoogleAuthError, GoogleIdentity
-from tests.test_refresh_tokens import age_tombstone
+from tests.helpers import age_tombstone
 
 API = "/api/v1/auth"
 

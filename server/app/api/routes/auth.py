@@ -6,7 +6,8 @@ from fastapi.responses import JSONResponse
 from app.api.cookies import clear_auth_cookies, set_auth_cookies
 from app.config import settings
 from app.core.deps import CurrentUser, DbSession, Denylist, RefreshTokens, TokenClaims
-from app.core.security import create_access_token, describe_device
+from app.core.devices import describe_device
+from app.core.security import create_access_token
 from app.schemas.auth import (
     GoogleSignInRequest,
     MessageResponse,

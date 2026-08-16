@@ -1,4 +1,4 @@
-import { percentOf } from "@/lib/format";
+import { ProgressBar } from "@/components/ui";
 import type { DayLog } from "@/types/api";
 
 /**
@@ -28,9 +28,7 @@ export function MacroBars({ log }: { log: DayLog }) {
               <span className="font-mono text-micro text-faint">of {row.goal} g</span>
             )}
           </div>
-          <div className="h-[3px] overflow-hidden rounded-[2px] bg-fill">
-            <div className="h-full bg-accent" style={{ width: percentOf(row.have, row.goal) }} />
-          </div>
+          <ProgressBar value={row.have} total={row.goal} height={3} />
           <span className="text-micro text-subtle">{row.name}</span>
         </div>
       ))}

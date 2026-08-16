@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -34,8 +35,8 @@ class SessionOut(BaseModel):
     family_id: str
     device_label: str
     ip: str
-    created_at: str
-    last_used_at: str
+    created_at: datetime
+    last_used_at: datetime
     # Lets the UI mark "this device" without the client having to guess.
     is_current: bool = False
 

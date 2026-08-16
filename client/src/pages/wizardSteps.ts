@@ -1,26 +1,44 @@
+import { GOAL_OPTIONS, type Option, SEX_OPTIONS } from "@/lib/labels";
 import type { GoalType, Sex } from "@/types/api";
 
-export interface Choice {
-  id: string;
-  label: string;
-  desc?: string;
-}
+/** Answers held as a number, and answers picked from a list. */
+export type NumberKey = "age" | "height" | "weight" | "targetWeight";
+export type ChoiceKey = "sex" | "goal";
 
-export interface WizardStep {
-  key: "age" | "sex" | "height" | "weight" | "goal" | "targetWeight";
-  kind: "number" | "choice";
+interface StepBase {
   title: string;
   sub: string;
   /** Short label for the desktop answer summary. */
   summary: string;
+  hint?: string;
+}
+
+export interface NumberStep extends StepBase {
+  kind: "number";
+  key: NumberKey;
   unit?: string;
   min?: number;
   max?: number;
   step?: number;
   decimals?: number;
-  hint?: string;
-  choices?: Choice[];
 }
+
+export interface ChoiceStep extends StepBase {
+  kind: "choice";
+  key: ChoiceKey;
+  choices: readonly Option<Sex | GoalType>[];
+}
+
+/**
+ * A discriminated union rather than one flat shape with optional fields.
+ *
+ * `kind` now narrows `key`, so `answers[step.key]` type-checks on its own where
+ * it previously needed `step.key as "sex" | "goal"` at five separate call
+ * sites — casts that would have kept compiling if a seventh step were added
+ * with the wrong kind. It also makes `choices` required exactly where it is
+ * used and absent where it is meaningless.
+ */
+export type WizardStep = NumberStep | ChoiceStep;
 
 export interface WizardAnswers {
   age: number;
@@ -29,6 +47,16 @@ export interface WizardAnswers {
   targetWeight: number | null;
   sex: Sex | null;
   goal: GoalType | null;
+}
+
+/** Answers with both choices made — the only shape the server can be sent. */
+export type CompletedAnswers = WizardAnswers & { sex: Sex; goal: GoalType };
+
+export function isComplete(answers: WizardAnswers): answers is CompletedAnswers {
+  // A type guard rather than `answers.sex as Sex` at the call site: the wizard
+  // can be reached mid-flight via browser history, and a cast would send the
+  // server a literal `null` while claiming otherwise.
+  return answers.sex !== null && answers.goal !== null;
 }
 
 export const INITIAL_ANSWERS: WizardAnswers = {
@@ -61,10 +89,7 @@ export const STEPS: WizardStep[] = [
     title: "What is your gender?",
     sub: "Resting metabolism is calculated differently for male and female bodies.",
     summary: "Gender",
-    choices: [
-      { id: "female", label: "Female" },
-      { id: "male", label: "Male" },
-    ],
+    choices: SEX_OPTIONS,
   },
   {
     key: "height",
@@ -96,11 +121,7 @@ export const STEPS: WizardStep[] = [
     title: "What are you tracking toward?",
     sub: "This only shifts the target up or down. Nothing about the app changes.",
     summary: "Goal",
-    choices: [
-      { id: "lose", label: "Lose weight, maintain muscle", desc: "Lower calories & fat, high protein." },
-      { id: "maintain", label: "Maintain", desc: "Eat at your estimated burn." },
-      { id: "gain", label: "Gain weight and muscle", desc: "Maximize protein and carbs." },
-    ],
+    choices: GOAL_OPTIONS,
   },
   {
     key: "targetWeight",
@@ -124,7 +145,7 @@ export function visibleSteps(goal: GoalType | null): WizardStep[] {
  * to sit on the correct side of current weight, or the goal contradicts itself.
  */
 export function resolveStep(step: WizardStep, answers: WizardAnswers): WizardStep {
-  if (step.key !== "targetWeight") return step;
+  if (step.kind !== "number" || step.key !== "targetWeight") return step;
 
   const losing = answers.goal !== "gain";
   const weight = answers.weight;
@@ -141,27 +162,22 @@ export function resolveStep(step: WizardStep, answers: WizardAnswers): WizardSte
   };
 }
 
-export function stepValue(step: WizardStep, answers: WizardAnswers): number {
+export function stepValue(step: NumberStep, answers: WizardAnswers): number {
   if (step.key === "targetWeight") {
     // Seed a sensible default rather than making the user dial from zero.
     return answers.targetWeight ?? answers.weight + (answers.goal === "gain" ? 5 : -5);
   }
-  return answers[step.key as "age" | "height" | "weight"];
+  return answers[step.key];
 }
 
-export function clampValue(step: WizardStep, value: number): number {
+export function clampValue(step: NumberStep, value: number): number {
   const stepSize = step.step ?? 1;
   const rounded = Math.round(value / stepSize) * stepSize;
   return Math.min(step.max ?? Infinity, Math.max(step.min ?? -Infinity, rounded));
 }
 
-export function formatValue(step: WizardStep, value: number): string {
+export function formatValue(step: NumberStep, value: number): string {
   return step.decimals ? value.toFixed(step.decimals) : String(Math.round(value));
 }
 
-export const SEX_LABEL: Record<string, string> = { female: "Female", male: "Male" };
-export const GOAL_LABEL: Record<string, string> = {
-  lose: "Lose + muscle",
-  maintain: "Maintain",
-  gain: "Gain + muscle",
-};
+export { GOAL_LABEL, SEX_LABEL } from "@/lib/labels";
