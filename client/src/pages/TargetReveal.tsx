@@ -27,7 +27,7 @@ function toPayload(answers: CompletedAnswers): OnboardingPayload {
 
 export function TargetReveal() {
   const navigate = useNavigate();
-  const { refreshUser } = useAuth();
+  const { completeOnboarding } = useAuth();
   const location = useLocation();
   const answers = (location.state as { answers?: WizardAnswers } | null)?.answers;
 
@@ -65,16 +65,18 @@ export function TargetReveal() {
     setError(null);
     try {
       await api.onboarding.complete(toPayload(answers));
-      // Re-read the session before leaving: the profile and goal now exist, and
-      // until the client knows that, ProtectedRoute still holds the user in the
-      // wizard and /today would bounce straight back here.
-      await refreshUser();
+      // The profile and goal now exist, so lift the redirect that was holding
+      // the user here — otherwise /today bounces straight back. Done locally
+      // rather than by re-reading the session: the call above already proved
+      // it, and a second request could only fail, which `refreshUser` would
+      // read as a dead session and sign the user out on the last step.
+      completeOnboarding();
       navigate("/today", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save your answers");
       setSaving(false);
     }
-  }, [answers, navigate, refreshUser]);
+  }, [answers, navigate, completeOnboarding]);
 
   // Reached directly, or with the wizard half-finished.
   if (!answers || !isComplete(answers)) return <Navigate to="/onboarding" replace />;

@@ -24,7 +24,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setNeedsOnboarding(session.needs_onboarding);
       })
       .catch(() => {
-        if (!cancelled) setUser(null);
+        if (cancelled) return;
+        setUser(null);
+        setNeedsOnboarding(false);
       })
       .finally(() => {
         if (!cancelled) setIsLoading(false);
@@ -54,13 +56,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       // Clear locally even if the request failed — the user asked to be signed
       // out, and leaving them looking signed in would be worse than a stale
-      // server-side session that expires on its own.
+      // server-side session that expires on its own. Both fields go together:
+      // they describe one session, and a stale `needsOnboarding` outliving the
+      // user it belonged to is how the next sign-in inherits the wrong route.
       setUser(null);
+      setNeedsOnboarding(false);
     }
   }, []);
 
-  // Also re-reads `needs_onboarding`, which is how finishing the wizard lifts
-  // the redirect that put the user in it.
+  const completeOnboarding = useCallback(() => setNeedsOnboarding(false), []);
+
+  // Re-reads the whole session, `needs_onboarding` included. Note the catch
+  // treats any failure as a lost session, so this belongs on paths that can
+  // afford to end at the sign-in screen — not on the wizard's save path, where
+  // a transient blip would discard work the server has already accepted.
   const refreshUser = useCallback(async () => {
     try {
       const session = await api.auth.me();
@@ -68,12 +77,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setNeedsOnboarding(session.needs_onboarding);
     } catch {
       setUser(null);
+      setNeedsOnboarding(false);
     }
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, isLoading, needsOnboarding, signIn, signOut, refreshUser }),
-    [user, isLoading, needsOnboarding, signIn, signOut, refreshUser],
+    () => ({
+      user,
+      isLoading,
+      needsOnboarding,
+      signIn,
+      signOut,
+      completeOnboarding,
+      refreshUser,
+    }),
+    [user, isLoading, needsOnboarding, signIn, signOut, completeOnboarding, refreshUser],
   );
 
   return <AuthContext value={value}>{children}</AuthContext>;
