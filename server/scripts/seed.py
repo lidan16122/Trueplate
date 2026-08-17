@@ -11,6 +11,7 @@ import logging
 
 from sqlalchemy import select
 
+from app.db.loop import psycopg_loop_factory
 from app.db.models import Food
 from app.db.seed_data import SEED_FOODS
 from app.db.session import SessionLocal, engine
@@ -60,4 +61,5 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # A bare `asyncio.run` here dies on Windows before the first query — see loop.py.
+    asyncio.run(main(), loop_factory=psycopg_loop_factory())

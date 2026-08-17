@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from app.config import settings
+from app.db.loop import psycopg_loop_factory
 
 # Importing the package registers every model on Base.metadata. Autogenerate
 # only sees what is reachable from here.
@@ -62,7 +63,8 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    # Nothing shields a migration from the loop psycopg rejects — see loop.py.
+    asyncio.run(run_async_migrations(), loop_factory=psycopg_loop_factory())
 
 
 if context.is_offline_mode():

@@ -135,7 +135,16 @@ class TestProtectedRoutes:
         response = await client.get(f"{API}/me")
 
         assert response.status_code == 200
-        assert response.json()["email"] == "alice@example.com"
+        assert response.json()["user"]["email"] == "alice@example.com"
+
+    async def test_me_reports_that_onboarding_is_still_outstanding(self, client, google_ok):
+        # The client cannot work this out for itself on a reload: the cookies are
+        # httpOnly, so a page load has no memory of what sign-in was told. Without
+        # it, a user who closed the tab mid-wizard returns to a day view whose
+        # targets do not exist.
+        await sign_in(client)
+
+        assert (await client.get(f"{API}/me")).json()["needs_onboarding"] is True
 
     async def test_a_tampered_token_is_rejected(self, client, google_ok):
         await sign_in(client)

@@ -16,7 +16,9 @@ export interface User {
   initials: string;
 }
 
-export interface SignInResponse {
+/** Returned by both `POST /auth/google` and `GET /auth/me` — one shape, so
+ *  sign-in and a cold reload cannot disagree about where a user belongs. */
+export interface SessionResponse {
   user: User;
   needs_onboarding: boolean;
 }
