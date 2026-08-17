@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { useAuth } from "@/auth/useAuth";
 import type { GoalType, Sex } from "@/types/api";
 
 
@@ -18,6 +19,7 @@ import {
 
 export function Onboarding() {
   const navigate = useNavigate();
+  const { signOut } = useAuth();
   const [answers, setAnswers] = useState<WizardAnswers>(INITIAL_ANSWERS);
   const [index, setIndex] = useState(0);
   const [draft, setDraft] = useState<string | null>(null);
@@ -64,6 +66,14 @@ export function Onboarding() {
     setDraft(null);
     setIndex((i) => i - 1);
   }, [index]);
+
+  // The only way out. Until a profile exists, ProtectedRoute redirects every
+  // other route here — /profile, where sign-out normally lives, included — so
+  // someone who picked the wrong Google account would otherwise be stuck.
+  const leave = useCallback(async () => {
+    await signOut();
+    navigate("/signin", { replace: true });
+  }, [signOut, navigate]);
 
   // Keyboard: Enter advances, arrows step the value. The design's desktop hint
   // ("↑ ↓ to step") promises this, so it has to actually work.
@@ -180,6 +190,12 @@ export function Onboarding() {
           <span className="font-mono text-label text-subtle md:hidden">
             {index + 1} / {steps.length}
           </span>
+          <button
+            onClick={leave}
+            className="flex-none text-label text-subtle transition-colors hover:text-ink"
+          >
+            Sign out
+          </button>
         </div>
 
         <div className="flex flex-1 flex-col justify-center gap-8 py-10">
