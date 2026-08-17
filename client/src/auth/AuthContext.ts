@@ -14,6 +14,15 @@ export interface AuthState {
   needsOnboarding: boolean;
   signIn: (credential: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /**
+   * Clear the onboarding requirement after the wizard has been saved.
+   *
+   * Local and synchronous by design. A successful `POST /onboarding` already
+   * proves the profile and goal exist, so re-reading the session to learn it
+   * only adds a way to fail — and `refreshUser` treats any failure as a lost
+   * session, which would sign the user out the instant they finished.
+   */
+  completeOnboarding: () => void;
   refreshUser: () => Promise<void>;
 }
 

@@ -41,8 +41,10 @@ export function ProtectedRoute() {
   // The wizard is the whole app until it is done: a user with no profile has no
   // targets, so every other screen would render against zeroes. Enforced here
   // rather than at sign-in so it survives a reload and a half-finished wizard.
+  // The wizard carries its own sign-out, because this redirect covers /profile
+  // too — and a user on the wrong Google account must still be able to leave.
   if (needsOnboarding && !location.pathname.startsWith("/onboarding")) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to={homeFor(needsOnboarding)} replace />;
   }
 
   return <Outlet />;
