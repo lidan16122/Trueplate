@@ -13,7 +13,7 @@ from app.schemas.auth import (
     MessageResponse,
     SessionListResponse,
     SessionOut,
-    SignInResponse,
+    SessionResponse,
     UserOut,
 )
 from app.services.auth_service import (
@@ -37,14 +37,14 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-@router.post("/google", response_model=SignInResponse)
+@router.post("/google", response_model=SessionResponse)
 async def sign_in_with_google(
     payload: GoogleSignInRequest,
     request: Request,
     response: Response,
     db: DbSession,
     refresh_tokens: RefreshTokens,
-) -> SignInResponse:
+) -> SessionResponse:
     """Exchange a Google ID token for a session."""
     try:
         identity = await verify_google_credential(payload.credential)
@@ -81,7 +81,7 @@ async def sign_in_with_google(
         db, resolved.user.id
     )
 
-    return SignInResponse(
+    return SessionResponse(
         user=UserOut.model_validate(resolved.user),
         needs_onboarding=needs_onboarding,
     )
@@ -158,9 +158,19 @@ async def logout(
     return MessageResponse(detail="Signed out")
 
 
-@router.get("/me", response_model=UserOut)
-async def read_current_user(user: CurrentUser) -> UserOut:
-    return UserOut.model_validate(user)
+@router.get("/me", response_model=SessionResponse)
+async def read_current_user(user: CurrentUser, db: DbSession) -> SessionResponse:
+    """The session as the client sees it on a cold page load.
+
+    Carries `needs_onboarding` and not just the user: the auth cookies are
+    httpOnly, so a reload has no way to rediscover that the wizard is still
+    outstanding. Without it the client can only learn this at sign-in, and a
+    user who closed the tab mid-wizard comes back to a day view with no targets.
+    """
+    return SessionResponse(
+        user=UserOut.model_validate(user),
+        needs_onboarding=not await has_completed_onboarding(db, user.id),
+    )
 
 
 @router.get("/sessions", response_model=SessionListResponse)

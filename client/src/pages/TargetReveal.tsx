@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 
+import { useAuth } from "@/auth/useAuth";
 import { ErrorNote, Eyebrow, ProgressBar, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
 import type { OnboardingPayload, Targets } from "@/types/api";
@@ -26,6 +27,7 @@ function toPayload(answers: CompletedAnswers): OnboardingPayload {
 
 export function TargetReveal() {
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const location = useLocation();
   const answers = (location.state as { answers?: WizardAnswers } | null)?.answers;
 
@@ -63,12 +65,16 @@ export function TargetReveal() {
     setError(null);
     try {
       await api.onboarding.complete(toPayload(answers));
+      // Re-read the session before leaving: the profile and goal now exist, and
+      // until the client knows that, ProtectedRoute still holds the user in the
+      // wizard and /today would bounce straight back here.
+      await refreshUser();
       navigate("/today", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save your answers");
       setSaving(false);
     }
-  }, [answers, navigate]);
+  }, [answers, navigate, refreshUser]);
 
   // Reached directly, or with the wizard half-finished.
   if (!answers || !isComplete(answers)) return <Navigate to="/onboarding" replace />;

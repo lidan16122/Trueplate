@@ -1,5 +1,4 @@
 import { useCallback, useState } from "react";
-import { useNavigate } from "react-router";
 
 import { GoogleSignInButton } from "@/auth/GoogleSignInButton";
 import { useAuth } from "@/auth/useAuth";
@@ -11,7 +10,6 @@ const SUBHEAD =
 
 export function SignIn() {
   const { signIn } = useAuth();
-  const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -20,17 +18,19 @@ export function SignIn() {
       setBusy(true);
       setError(null);
       try {
-        const { needsOnboarding } = await signIn(credential);
-        // The design's signin -> wizard edge: a returning user skips straight
-        // to their day.
-        navigate(needsOnboarding ? "/onboarding" : "/today", { replace: true });
+        // No navigation here on purpose. Setting the user re-renders
+        // PublicOnlyRoute, which owns the destination and sends a user with no
+        // profile to the wizard. Navigating here as well raced that guard, and
+        // the guard won — which is how the design's signin -> wizard edge got
+        // silently skipped.
+        await signIn(credential);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Sign-in failed");
       } finally {
         setBusy(false);
       }
     },
-    [signIn, navigate],
+    [signIn],
   );
 
   const googleButton = (
