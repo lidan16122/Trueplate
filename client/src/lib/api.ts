@@ -15,9 +15,8 @@ import type {
   OnboardingPayload,
   Profile,
   Session,
-  SignInResponse,
+  SessionResponse,
   Targets,
-  User,
 } from "@/types/api";
 
 const BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -166,8 +165,8 @@ export const api = {
   auth: {
     /** `skipRefresh`: a failure here means bad credentials, not a stale session. */
     signInWithGoogle: (credential: string) =>
-      post<SignInResponse>("/auth/google", { credential }, { skipRefresh: true }),
-    me: () => get<User>("/auth/me"),
+      post<SessionResponse>("/auth/google", { credential }, { skipRefresh: true }),
+    me: () => get<SessionResponse>("/auth/me"),
     logout: () => post<{ detail: string }>("/auth/logout", undefined, { skipRefresh: true }),
     sessions: () => get<{ sessions: Session[] }>("/auth/sessions"),
     revokeSession: (familyId: string) => del<{ detail: string }>(`/auth/sessions/${familyId}`),
