@@ -1,0 +1,32 @@
+#!/bin/sh
+#
+# Strip AI-tool attribution trailers from commit messages.
+#
+# Agentic coding tools append a `Co-Authored-By:` trailer and a "Generated with"
+# line by default. Authorship of this repo is not shared with them, and a rule
+# that lives only in a tool's own configuration is one that a different tool — or
+# the same tool in a fresh session — will not have read.
+#
+# Enforced here instead, where it holds no matter what produced the commit.
+# Enable with:  git config core.hooksPath .githooks
+#
+# Deliberately narrow: it matches the tool trailers by their address, so a real
+# human co-author on a pairing session still survives.
+
+set -e
+
+msg="$1"
+tmp="$msg.tmp"
+
+grep -v \
+  -e '^Co-Authored-By:.*@anthropic\.com>' \
+  -e '^🤖 Generated with \[Claude Code\]' \
+  "$msg" > "$tmp"
+
+# Drop blank lines the removal left at the end, so the message does not gain a
+# ragged tail every time a trailer is stripped.
+awk 'BEGIN { blanks = 0 }
+     /^[[:space:]]*$/ { blanks++; next }
+     { while (blanks-- > 0) print ""; blanks = 0; print }' "$tmp" > "$msg"
+
+rm -f "$tmp"
