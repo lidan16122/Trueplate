@@ -110,6 +110,21 @@ are genuinely exercised. The suite needs no running Postgres or Redis — keep i
 Name a test for the behaviour it pins, so a failure reads as a symptom:
 `test_parallel_refreshes_do_not_revoke_the_session`, not `test_rotate_2`.
 
+## Commits
+
+**No AI-tool attribution in commit messages or PR bodies.** Authorship here is not shared
+with the tooling, so a `Co-Authored-By:` trailer pointing at a model, or a "Generated with"
+line in a PR description, does not belong in this repo's history.
+
+`.githooks/commit-msg` enforces it rather than trusting each tool to have been told. Enable
+it once per clone:
+
+    git config core.hooksPath .githooks
+
+It matches the tool trailers by address, so a genuine human co-author on a pairing session
+still survives. This is about credit, not about the product — Trueplate calls the Claude API,
+so references to it in code and docs are correct and stay.
+
 ## Environment gotchas
 
 `fastapi dev` crashes on Windows — its banner cannot encode to the console codepage. Run:
