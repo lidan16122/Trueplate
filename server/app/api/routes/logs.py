@@ -178,6 +178,7 @@ async def add_entries(
                 name=item.name,
                 brand=item.brand,
                 quantity_g=item.quantity_g,
+                serving_description=item.serving_description,
                 kcal_per_100g=item.kcal_per_100g,
                 protein_g_per_100g=item.protein_g_per_100g,
                 carbs_g_per_100g=item.carbs_g_per_100g,

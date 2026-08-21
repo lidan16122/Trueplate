@@ -51,6 +51,19 @@
   --color-line-2: #ededeb; /* dividers */
   --color-line-soft: #e8e8e6; /* date chips */
   --color-hairline: #dedede; /* dashed empty states */
+  /* Carries the same hex as --color-fill, deliberately. The design uses this
+     value for two unrelated jobs — a progress-bar track and the border of a
+     logged-item card — and naming it once per role is what stops a later change
+     to the track silently restyling every card. */
+  --color-line-card: #ececeb; /* confirm + day-view item cards */
+  --color-line-control: #e0e0de; /* gram/number inputs and their steppers */
+  --color-hairline-strong: #d8d8d6; /* the desktop photo drop-zone */
+
+  /* --- add-food surfaces --- */
+  --color-icon-faint: #c4c4c2; /* delete glyphs, dashed-zone icon outlines */
+  --color-panel: #fafafa; /* desktop chrome and side panels */
+  --color-placeholder: #f4f4f3; /* the meal-photo ground before an image loads */
+  --color-accent-wash: #f6f8f6; /* drop-zone hover, accent at ~4% */
 
   /* --- type --- */
   --font-sans: "Libre Franklin", Helvetica, Arial, sans-serif;
@@ -80,6 +93,17 @@
   --radius-lg: 16px;
   --radius-xl: 18px;
   --radius-2xl: 22px;
+}
+
+/* Locks digits to a single advance width.
+   This is the other half of the font-mono rule: mono makes figures scannable,
+   tabular-nums stops them *reflowing* as the value changes. Without it a live
+   total visibly jitters every time a digit ticks over, which is exactly the
+   moment a user is reading it.
+   It was referenced in nine files long before it existed anywhere — a class
+   that matched no rule and silently did nothing. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
 }
 
 @layer base {

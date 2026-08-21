@@ -9,6 +9,7 @@ from app.api.router import api_router
 from app.api.routes import health
 from app.config import settings
 from app.db.session import engine
+from app.services.nutrition import close_http_client
 from app.stores.client import close_redis_pool
 
 logging.basicConfig(level=settings.log_level)
@@ -23,6 +24,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     # out so reloads and container stops do not leak sockets.
     await engine.dispose()
     await close_redis_pool()
+    await close_http_client()
     logger.info("%s API stopped", settings.app_name)
 
 
