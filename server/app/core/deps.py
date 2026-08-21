@@ -11,6 +11,13 @@ from app.config import settings
 from app.core.security import AccessTokenClaims, TokenError, decode_access_token
 from app.db.models import User
 from app.db.session import get_db
+from app.services.detection import DetectionService
+from app.services.nutrition import (
+    NutritionResolver,
+    OpenFoodFactsClient,
+    UsdaClient,
+    get_http_client,
+)
 from app.stores.access_tokens import AccessTokenDenylist
 from app.stores.client import get_redis
 from app.stores.rate_limit import RateLimiter
@@ -47,6 +54,36 @@ def get_access_denylist(redis: RedisClient) -> AccessTokenDenylist:
 RefreshTokens = Annotated[RefreshTokenStore, Depends(get_refresh_token_store)]
 RateLimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 Denylist = Annotated[AccessTokenDenylist, Depends(get_access_denylist)]
+
+
+def get_open_food_facts() -> OpenFoodFactsClient:
+    """The barcode path's only upstream.
+
+    A dependency rather than a constructor call in the route, so the seam a
+    test substitutes is the same one every other route uses — and so
+    `services/nutrition/__init__` keeps its promise that nothing outside the
+    package reaches for a source client directly.
+    """
+    return OpenFoodFactsClient(get_http_client())
+
+
+FoodFacts = Annotated[OpenFoodFactsClient, Depends(get_open_food_facts)]
+
+
+def get_nutrition_resolver(db: DbSession, off: FoodFacts) -> NutritionResolver:
+    # The HTTP client is process-wide and pooled; only the DB session is
+    # per-request, which is why the resolver is built here rather than shared.
+    return NutritionResolver(db, UsdaClient(get_http_client()), off)
+
+
+Resolver = Annotated[NutritionResolver, Depends(get_nutrition_resolver)]
+
+
+def get_detection_service(resolver: Resolver) -> DetectionService:
+    return DetectionService(resolver)
+
+
+Detector = Annotated[DetectionService, Depends(get_detection_service)]
 
 
 async def get_token_claims(request: Request, denylist: Denylist) -> AccessTokenClaims:

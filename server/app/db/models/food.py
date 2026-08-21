@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, String, text
+from sqlalchemy import JSON, DateTime, Index, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,14 @@ class Food(UUIDPrimaryKeyMixin, TimestampMixin, NutritionPer100gMixin, Base):
         # Case-insensitive name lookup — the shape every "find me a food called
         # X" query takes, whether it comes from AI search terms or a text log.
         Index("ix_foods_name_lower", text("lower(name)")),
+        # What makes write-back converge instead of accumulating near-duplicates.
+        # The resolver stores a food under the canonical search term that
+        # resolved it, so without this two concurrent detections of the same term
+        # each insert a row and every later lookup has to arbitrate between them.
+        # Scoped by source as well as name because the same term legitimately
+        # resolves differently against USDA and Open Food Facts, and a curated
+        # seed row must be able to coexist with a fetched one.
+        UniqueConstraint("name", "source", name="uq_foods_name_source"),
     )
 
     name: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
@@ -30,5 +38,9 @@ class Food(UUIDPrimaryKeyMixin, TimestampMixin, NutritionPer100gMixin, Base):
     source: Mapped[str] = mapped_column(String(24), default=NutritionSource.SEED, nullable=False)
     # FDC id for USDA rows; null for seeded rows.
     source_ref: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
-    raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # The SQLite variant is only for the test suite, which has no JSONB. It
+    # changes nothing about the Postgres column.
+    raw_payload: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

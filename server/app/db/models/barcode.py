@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, String
+from sqlalchemy import JSON, DateTime, Float, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,11 +12,14 @@ class BarcodeProduct(TimestampMixin, NutritionPer100gMixin, Base):
     """Postgres source of truth for UPC lookups.
 
     The UPC is the primary key rather than a surrogate UUID: it is genuinely
-    unique, it is what the scanner produces, and it makes the Redis key
-    (``barcode:{upc}``) map one-to-one onto the row it caches.
+    unique, and it is what the scanner produces.
 
-    Redis sits in *front* of this table, never in place of it — a cache miss
-    falls through to here, and only a miss on both reaches Open Food Facts.
+    Lookup order is this table, then Open Food Facts on a miss, then write back.
+    There is deliberately no Redis layer in front: the Upstash instance is small
+    and reserved for refresh-token families and rate-limit counters, and a
+    barcode row is a single-key Postgres read that caching would only buy an
+    invalidation problem for. This is the same call CLAUDE.md records for
+    profiles, goals and day totals.
     """
 
     __tablename__ = "barcode_products"
@@ -38,5 +41,7 @@ class BarcodeProduct(TimestampMixin, NutritionPer100gMixin, Base):
     )
     # Kept so a parsing change can be replayed against what the API actually
     # returned, without re-hitting a rate-limited upstream.
-    raw_payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    raw_payload: Mapped[dict | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
     fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

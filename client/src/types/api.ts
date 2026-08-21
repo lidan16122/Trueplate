@@ -128,6 +128,8 @@ export interface FoodEntryCreate {
   brand?: string | null;
   meal_type: MealType;
   quantity_g: number;
+  /** Household form of the portion ("1.5 cups"). Display only — grams rule. */
+  serving_description?: string | null;
   kcal_per_100g: number;
   protein_g_per_100g: number;
   carbs_g_per_100g: number;
@@ -152,7 +154,40 @@ export interface DetectedFood {
   preparation: string;
   search_terms: string[];
   portion_reasoning: string | null;
+  /**
+   * A familiar handle on the same mass — "1.5 cups", "2 slices".
+   *
+   * Grams stay authoritative. The ratio `estimated_grams / household_quantity`
+   * is the grams-per-unit for this food in this photo, so editing the familiar
+   * number rescales grams by the model's own anchor. That is why there is no
+   * density table anywhere: we never convert between units, only within one.
+   *
+   * Both are null for foods with no natural unit — a smear of sauce is not
+   * "1" of anything.
+   */
+  household_quantity: number | null;
+  household_unit: HouseholdUnit | null;
 }
+
+/** Mirrors the closed set on the server; widening it here loses the check. */
+export type HouseholdUnit =
+  | "cup"
+  | "tbsp"
+  | "tsp"
+  | "slice"
+  | "piece"
+  | "medium"
+  | "small"
+  | "large"
+  | "bowl"
+  | "plate"
+  | "glass"
+  | "can"
+  | "bottle"
+  | "scoop"
+  | "handful"
+  | "fillet"
+  | "egg";
 
 export interface NutritionMatch {
   food_id: string | null;
@@ -160,6 +195,8 @@ export interface NutritionMatch {
   brand: string | null;
   source: NutritionSource;
   source_ref: string | null;
+  /** The label's own serving ("1 bar (40 g)"). Barcode products only. */
+  serving_description: string | null;
   kcal_per_100g: number;
   protein_g_per_100g: number;
   carbs_g_per_100g: number;

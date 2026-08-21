@@ -7,6 +7,7 @@ not reachable from this module is silently invisible to migrations.
 
 from app.db.base import Base
 from app.db.models.barcode import BarcodeProduct
+from app.db.models.detection import Detection
 from app.db.models.food import Food
 from app.db.models.goal import Goal
 from app.db.models.log import DailyLog, FoodEntry
@@ -18,6 +19,7 @@ __all__ = [
     "BarcodeProduct",
     "Base",
     "DailyLog",
+    "Detection",
     "Food",
     "FoodEntry",
     "Goal",

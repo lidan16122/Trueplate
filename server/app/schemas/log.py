@@ -83,6 +83,12 @@ class FoodEntryCreate(BaseModel):
     meal_type: MealType
     quantity_g: float = Field(gt=0, le=5000)
 
+    # The household form of the same portion — "1.5 cups", "1 bar (40 g)".
+    # Display only: grams remain what everything is computed from. Kept so the
+    # day view can read "1 cup rice" rather than "158 g rice", which is the form
+    # a person recognises as the thing they actually ate.
+    serving_description: str | None = Field(default=None, max_length=120)
+
     kcal_per_100g: float = Field(ge=0, le=1000)
     protein_g_per_100g: float = Field(default=0, ge=0, le=100)
     carbs_g_per_100g: float = Field(default=0, ge=0, le=100)

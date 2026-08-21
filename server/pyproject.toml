@@ -16,16 +16,36 @@ dependencies = [
     "pydantic-settings>=2.7",
     # Access-token signing.
     "pyjwt>=2.10",
-    # Vision + text food detection (schemas only for now; call not yet wired).
+    # Vision + text food detection.
     "anthropic>=0.40",
     # Google ID-token verification.
     "google-auth[requests]>=2.35",
+    # Outbound nutrition lookups (USDA FoodData Central, Open Food Facts).
+    # Already present transitively via fastapi[standard] and anthropic; declared
+    # directly because app code imports it.
+    "httpx>=0.28",
+    # Server-side barcode decoding.
+    #
+    # pyzbar, not zxing-cpp, and specifically because of this toolchain: zxing-cpp
+    # publishes no cp314 wheels, so on Python 3.14 it needs a C++/CMake source
+    # build. pyzbar's Windows wheel is `py2.py3-none-win_amd64` — a ctypes shim
+    # with the zbar DLLs bundled — so it is indifferent to the interpreter
+    # version. A Linux deploy needs the `libzbar0` system package.
+    "pyzbar>=0.1.9",
+    # Downscaling before the vision call. Image tokens are the largest single
+    # cost in a photo detection, and a phone camera sends far more pixels than
+    # the model can use.
+    "pillow>=11.0",
 ]
 
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",
     "fakeredis[lua]>=2.37.0",
+    # Renders a real EAN-13 for the decode test. Without it that test could only
+    # assert that a *non*-barcode fails, which proves nothing about pyzbar
+    # actually working on this platform — the one thing worth checking.
+    "python-barcode[images]>=0.15",
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
     "ruff>=0.8",

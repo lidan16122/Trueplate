@@ -1,0 +1,48 @@
+"""add detections cache and foods uniqueness
+
+Revision ID: acac341a6d42
+Revises: 0001_initial
+Create Date: 2026-08-20 14:02:08.248998
+
+Two changes, both in service of the resolver:
+
+- ``detections`` caches a completed detection by content hash, so re-submitting
+  the same photo does not pay for a second vision call.
+- ``uq_foods_name_source`` makes write-back converge. The resolver stores a food
+  under the canonical search term that resolved it; without this, two concurrent
+  detections of the same term each insert a row.
+
+Precondition for the constraint: no existing duplicate ``(name, source)`` pairs
+in ``foods``. True of the seeded rows, which are distinct by name — but a
+database that has already been written to by an earlier build of the resolver
+would need de-duplicating first.
+"""
+from collections.abc import Sequence
+
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+from alembic import op
+
+# revision identifiers, used by Alembic.
+revision: str = 'acac341a6d42'
+down_revision: str | Sequence[str] | None = '0001_initial'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
+
+
+def upgrade() -> None:
+    op.create_table('detections',
+    sa.Column('cache_key', sa.String(length=64), nullable=False),
+    sa.Column('kind', sa.String(length=16), nullable=False),
+    sa.Column('payload', postgresql.JSONB(astext_type=sa.Text()).with_variant(sa.JSON(), 'sqlite'), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('cache_key', name=op.f('pk_detections'))
+    )
+    op.create_unique_constraint('uq_foods_name_source', 'foods', ['name', 'source'])
+
+
+def downgrade() -> None:
+    op.drop_constraint('uq_foods_name_source', 'foods', type_='unique')
+    op.drop_table('detections')
