@@ -12,6 +12,7 @@ bucket shared by every user of this app — and the penalty is an hour-long bloc
 rather than throttling, so "USDA said no" is a state this app will reach.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -33,6 +34,13 @@ _CARBS = 1005
 _FAT = 1004
 
 _KJ_PER_KCAL = 4.184
+
+# FDC's front end answers valid requests with a spurious 400 roughly half the
+# time. Three attempts takes the chance of losing a lookup from ~50% to ~12%.
+# 429 is excluded on purpose — that one means what it says.
+_ATTEMPTS = 3
+_RETRY_STATUSES = frozenset({400, 500, 502, 503, 504})
+_RETRY_BACKOFF_SECONDS = 0.25
 
 # Foundation and SR Legacy are lab-analysed whole foods; Survey is modelled from
 # them; Branded is manufacturer-submitted and the least consistent. A search for
@@ -133,6 +141,59 @@ class UsdaClient:
         key = settings.usda_fdc_api_key.strip()
         return bool(key) and "your-" not in key.lower()
 
+    @staticmethod
+    def _clean(term: str) -> str:
+        """Normalise a search term.
+
+        Punctuation carries no search signal here — "sourdough bread, toasted"
+        and "sourdough bread toasted" return the same thing — and the model
+        emits comma-separated labels routinely. Cosmetic, not a fix for
+        anything; see ``_ATTEMPTS`` for the failure that actually mattered.
+        """
+        return " ".join(term.replace(",", " ").split())
+
+    async def _retrying_get(self, term: str, limit: int) -> httpx.Response:
+        """Fetch, retrying the statuses FDC returns for no reason.
+
+        Their front end intermittently answers a perfectly valid request with a
+        400 and an nginx HTML error page: measured over eight identical requests
+        for ``avocado``, roughly half came back 400 and half 200, with no
+        relation to the query — so a single attempt loses about half of all
+        whole-food lookups. Each loss is invisible, because the resolver
+        degrades politely to Open Food Facts and the user just sees a worse
+        answer.
+
+        429 is deliberately *not* retried: that one is real, per-IP, and
+        hammering it extends the block.
+        """
+        last: httpx.Response | None = None
+        for attempt in range(_ATTEMPTS):
+            last = await self._get(term, limit)
+            if last.status_code not in _RETRY_STATUSES:
+                return last
+            if attempt < _ATTEMPTS - 1:
+                await asyncio.sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
+        return last  # type: ignore[return-value]  # the loop always runs once
+
+    async def _get(self, term: str, limit: int) -> httpx.Response:
+        return await self._client.get(
+            f"{settings.usda_fdc_base_url}/foods/search",
+            # A list of pairs, so `dataType` is sent as a repeated query
+            # parameter. Joining the values with commas instead — the shape
+            # FDC's own docs suggest — is rejected outright.
+            params=[
+                ("api_key", settings.usda_fdc_api_key),
+                ("query", self._clean(term)),
+                ("pageSize", limit),
+                # Ask for the useful data types explicitly; the default
+                # includes experimental sets that pollute the ranking.
+                ("dataType", "Foundation"),
+                ("dataType", "SR Legacy"),
+                ("dataType", "Survey (FNDDS)"),
+                ("dataType", "Branded"),
+            ],
+        )
+
     async def search(self, term: str, *, limit: int = 5) -> list[NutritionMatch]:
         """Best matches for ``term``, most plausible first. Empty on any failure."""
         if not self.configured:
@@ -141,25 +202,7 @@ class UsdaClient:
             return []
 
         try:
-            response = await self._client.get(
-                f"{settings.usda_fdc_base_url}/foods/search",
-                # A list of pairs, so `dataType` is sent as a repeated query
-                # parameter. Joining the values with commas instead — the shape
-                # FDC's own docs suggest — produces a query string their nginx
-                # rejects outright with a 400 and an HTML error page, which
-                # surfaces here as "USDA is down" for every lookup.
-                params=[
-                    ("api_key", settings.usda_fdc_api_key),
-                    ("query", term),
-                    ("pageSize", limit),
-                    # Ask for the useful data types explicitly; the default
-                    # includes experimental sets that pollute the ranking.
-                    ("dataType", "Foundation"),
-                    ("dataType", "SR Legacy"),
-                    ("dataType", "Survey (FNDDS)"),
-                    ("dataType", "Branded"),
-                ],
-            )
+            response = await self._retrying_get(term, limit)
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPStatusError as exc:

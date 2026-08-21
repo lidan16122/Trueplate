@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, s
 from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
-from app.core.deps import CurrentUser, DbSession, Detector
+from app.core.deps import CurrentUser, DbSession, Detector, FoodFacts
 from app.core.limits import AI_DETECT_SCOPE, RateLimit
 from app.enums import DetectionMethod, MealType
 from app.schemas.detection import (
@@ -26,12 +26,11 @@ from app.schemas.detection import (
 from app.services import barcode as barcode_service
 from app.services import detection_cache, imaging
 from app.services.detection import (
+    DetectionError,
     DetectionRefused,
-    DetectionUnavailable,
     NotFoodError,
     NothingDetected,
 )
-from app.services.nutrition import OpenFoodFactsClient, get_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +41,25 @@ router = APIRouter(prefix="/ai", tags=["ai"])
 detect_rate_limit = RateLimit(AI_DETECT_SCOPE)
 
 
-def _translate(exc: Exception) -> HTTPException:
+def _translate(exc: DetectionError | barcode_service.BarcodeError) -> HTTPException:
     """Map a detection failure onto the status code it actually means.
 
     Kept in one place because the distinction matters to the client: the
     AddFood screen retries a 503, but shows a 422 to the user as an answer.
+
+    Total over the two failure hierarchies it accepts, so callers can write
+    ``raise _translate(exc)`` and mean it. An earlier version re-raised on the
+    fallthrough, which made it a function that sometimes returned and sometimes
+    threw — and left the ``raise`` at every call site unreachable for exactly
+    the inputs it was written to handle.
     """
     if isinstance(exc, NotFoodError | NothingDetected | barcode_service.BarcodeError):
         return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
     if isinstance(exc, DetectionRefused):
         return HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc))
-    if isinstance(exc, DetectionUnavailable):
-        return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-    raise exc
+    # DetectionUnavailable, and any future sibling: unreachable upstream or
+    # missing configuration. 503 is the honest default for the base class.
+    return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
 async def _read_upload(image: UploadFile) -> bytes:
@@ -92,10 +97,16 @@ async def detect_from_photo(
     """Identify foods and estimate portions from a meal photo."""
     raw = await _read_upload(image)
 
-    # Hashed before downscaling, so the cache key is the bytes the user actually
-    # sent. Hashing the processed copy would make the key depend on our own
+    # Hashed before downscaling, so the content address is the bytes the user
+    # actually sent. Hashing the processed copy would make it depend on our own
     # resize settings, and every tweak to those would silently empty the cache.
-    cache_key = detection_cache.hash_image(raw)
+    #
+    # Two derived values, deliberately: `image_hash` travels to the client and
+    # into `food_entries` as the grouping key for one photo's entries, while the
+    # cache key additionally folds in the model and effort so a config change
+    # cannot keep serving a stale reading.
+    image_hash = detection_cache.hash_image(raw)
+    cache_key = detection_cache.photo_cache_key(image_hash)
     cached = await detection_cache.read(db, cache_key)
     if cached is not None:
         await db.commit()
@@ -107,9 +118,9 @@ async def detect_from_photo(
 
     try:
         response = await detector.detect_photo(
-            prepared, note=note, meal_type=meal_type, image_hash=cache_key
+            prepared, note=note, meal_type=meal_type, image_hash=image_hash
         )
-    except Exception as exc:  # noqa: BLE001 - narrowed inside _translate
+    except (DetectionError, barcode_service.BarcodeError) as exc:
         raise _translate(exc) from exc
 
     await detection_cache.write(db, cache_key, DetectionMethod.PHOTO, response)
@@ -143,7 +154,7 @@ async def detect_from_text(
 
     try:
         response = await detector.detect_text(payload.description, payload.meal_type)
-    except Exception as exc:  # noqa: BLE001 - narrowed inside _translate
+    except (DetectionError, barcode_service.BarcodeError) as exc:
         raise _translate(exc) from exc
 
     await detection_cache.write(db, cache_key, DetectionMethod.TEXT, response)
@@ -159,6 +170,7 @@ async def detect_from_text(
 async def detect_from_barcode(
     user: CurrentUser,
     db: DbSession,
+    off: FoodFacts,
     image: UploadFile | None = File(None),  # noqa: B008
     upc: str | None = Form(None),  # noqa: B008
     meal_type: MealType | None = Form(None),  # noqa: B008
@@ -172,22 +184,22 @@ async def detect_from_barcode(
     is nothing to identify and nothing to estimate.
     """
     code = (upc or "").strip()
-    if not code and image is not None:
-        raw = await _read_upload(image)
-        # Decoded from the original bytes: a barcode is fine detail, and the
-        # downscale the vision path applies routinely destroys it.
-        code = await run_in_threadpool(barcode_service.decode, raw) or ""
-
-    if not code:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="No barcode found. Try again with the barcode filling more of the frame.",
-        )
-
-    off = OpenFoodFactsClient(get_http_client())
     try:
+        if not code and image is not None:
+            raw = await _read_upload(image)
+            # Decoded from the original bytes: a barcode is fine detail, and the
+            # downscale the vision path applies routinely destroys it.
+            code = await run_in_threadpool(barcode_service.decode, raw) or ""
+
+        if not code:
+            # The service's own error type rather than a bare HTTPException, so
+            # every barcode failure reaches the client through one mapping.
+            raise barcode_service.BarcodeUnreadable(
+                "No barcode found. Try again with the barcode filling more of the frame."
+            )
+
         match, grams, serving = await barcode_service.lookup(db, off, code)
-    except Exception as exc:  # noqa: BLE001 - narrowed inside _translate
+    except (DetectionError, barcode_service.BarcodeError) as exc:
         raise _translate(exc) from exc
 
     await db.commit()

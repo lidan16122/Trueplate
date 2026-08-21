@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Navigate, useLocation, useNavigate } from "react-router";
 
-import { ErrorNote, Eyebrow } from "@/components/ui";
+import { ErrorNote, Eyebrow, Stat } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatDayLabel, formatNumber, macroLine, MEAL_LABELS, MEAL_ORDER } from "@/lib/format";
 import { scaleTo } from "@/lib/portion";
@@ -9,6 +9,7 @@ import type {
   DetectedFood,
   FoodDetectionResponse,
   FoodEntryCreate,
+  HouseholdUnit,
   MealType,
   NutritionMatch,
   ResolvedFoodItem,
@@ -32,10 +33,16 @@ interface DraftItem {
    * the model already anchored to a gram figure.
    */
   gramsPerUnit: number | null;
-  unit: string | null;
+  unit: HouseholdUnit | null;
+  /**
+   * The server's own wording for how sure it is.
+   *
+   * Taken rather than re-derived: the threshold that turns a confidence float
+   * into two words lives in `schemas/log.py`, and a second copy here would let
+   * the confirm screen and the day view disagree about the same entry.
+   */
+  serverLabel: string;
 }
-
-const SURE_THRESHOLD = 0.75;
 
 const KIND_LABEL: Record<string, string> = {
   photo: "Photo",
@@ -51,12 +58,13 @@ function toDraft(item: ResolvedFoodItem, index: number): DraftItem {
     key: `${index}-${detected.label}`,
     name: item.matched?.name ?? detected.label,
     grams: Math.round(detected.estimated_grams),
-    confirmed: !item.is_rough && detected.confidence >= SURE_THRESHOLD,
+    confirmed: !item.is_rough,
     matched: item.matched,
     alternatives: item.alternatives,
     detected,
     gramsPerUnit: quantity && quantity > 0 ? detected.estimated_grams / quantity : null,
     unit: detected.household_unit,
+    serverLabel: item.confidence_label,
   };
 }
 
@@ -207,8 +215,13 @@ export function Confirm() {
             meal_type: meal,
             quantity_g: draft.grams,
             // So the day view can read "1 cup rice" rather than "158 g rice".
+            // A scanned product has no household unit for the model to have
+            // estimated, but it does have the serving printed on the label —
+            // prefer that, so a barcode entry reads "1 bar (40 g)".
             serving_description:
-              units && draft.unit ? `${Number(units.toFixed(2))} ${draft.unit}` : null,
+              units && draft.unit
+                ? `${Number(units.toFixed(2))} ${draft.unit}`
+                : (m.serving_description ?? null),
             kcal_per_100g: m.kcal_per_100g,
             protein_g_per_100g: m.protein_g_per_100g,
             carbs_g_per_100g: m.carbs_g_per_100g,
@@ -236,10 +249,28 @@ export function Confirm() {
   if (!proposal) return <Navigate to="/add" replace />;
 
   const sourceNote = `${proposal.source_label}. Trueplate estimated the portions — the calorie numbers come from the food database once the grams are right.`;
+  // JSX rather than a string so the count itself can be mono. Every number in
+  // this app is, including the ones sitting inside a sentence — a figure that
+  // reflows as it ticks over is the thing the rule exists to prevent.
+  const count = (n: number) => <span className="tabular font-mono">{n}</span>;
+
   const roughNote =
-    roughCount === 0
-      ? "Every portion confirmed."
-      : `${roughCount} ${roughCount === 1 ? "portion is a rough guess" : "portions are rough guesses"} — tap the grams to correct ${roughCount === 1 ? "it" : "them"}.`;
+    roughCount === 0 ? (
+      "Every portion confirmed."
+    ) : (
+      <>
+        {count(roughCount)}{" "}
+        {roughCount === 1 ? "portion is a rough guess" : "portions are rough guesses"} — tap the
+        grams to correct {roughCount === 1 ? "it" : "them"}.
+      </>
+    );
+
+  const unresolvedNote = (
+    <>
+      {count(unresolved)} item{unresolved === 1 ? "" : "s"} could not be matched to a food and will
+      not be saved.
+    </>
+  );
 
   const photoPanel = (
     <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg border border-dashed border-hairline bg-placeholder">
@@ -282,7 +313,7 @@ export function Confirm() {
           ? "No match — edit or remove"
           : draft.confirmed
             ? "Fairly sure"
-            : "Rough guess"}
+            : draft.serverLabel}
       </span>
       {draft.alternatives.length > 0 && (
         <button
@@ -372,14 +403,10 @@ export function Confirm() {
     </>
   );
 
-  const footerTotals = (size: string) => (
+  const footerTotals = (size: number) => (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-baseline gap-2">
-        <span
-          className={`tabular font-mono font-medium text-ink ${size}`}
-        >
-          {formatNumber(totals.calories)}
-        </span>
+        <Stat value={formatNumber(totals.calories)} size={size} />
         <span className="text-caption text-subtle">kcal total</span>
       </div>
       <span className="tabular font-mono text-label text-faint">
@@ -400,7 +427,7 @@ export function Confirm() {
           >
             ←
           </button>
-          <span className="text-[15px] font-semibold text-ink">Check before saving</span>
+          <span className="text-item font-semibold text-ink">Check before saving</span>
           <span className="tabular font-mono text-label text-faint">
             {formatDayLabel(date, true)}
           </span>
@@ -430,9 +457,9 @@ export function Confirm() {
                 </div>
 
                 <div className="flex items-center gap-2.5">
-                  {gramsInput(draft, "w-[118px]", "h-11.5", "text-[19px]")}
+                  {gramsInput(draft, "w-[118px]", "h-11.5", "text-title")}
                   <div className="flex flex-1 flex-col items-end gap-0.5">
-                    <span className="tabular font-mono text-[19px] text-ink">
+                    <span className="tabular font-mono text-title text-ink">
                       {formatNumber(calories)} kcal
                     </span>
                     <span className="tabular font-mono text-micro text-faint">
@@ -459,15 +486,14 @@ export function Confirm() {
           <p className="text-label leading-relaxed text-subtle">{roughNote}</p>
           {unresolved > 0 && (
             <p className="text-label leading-relaxed text-warn">
-              {unresolved} item{unresolved === 1 ? "" : "s"} could not be matched to a food and
-              will not be saved.
+              {unresolvedNote}
             </p>
           )}
           {error && <ErrorNote>{error}</ErrorNote>}
         </main>
 
         <footer className="fixed inset-x-0 bottom-0 flex flex-col gap-3 border-t border-line-2 bg-surface px-5 pt-3.5 pb-7">
-          <div className="flex items-baseline justify-between">{footerTotals("text-[26px]")}</div>
+          <div className="flex items-baseline justify-between">{footerTotals(26)}</div>
           <button
             onClick={save}
             disabled={saving || drafts.length === 0}
@@ -517,10 +543,10 @@ export function Confirm() {
                     </div>
 
                     {householdInput(draft, household)}
-                    {gramsInput(draft, "w-[104px]", "h-11", "text-[17px]")}
+                    {gramsInput(draft, "w-[104px]", "h-11", "text-entry")}
 
                     <div className="flex w-[118px] flex-none flex-col items-end gap-0.5">
-                      <span className="tabular font-mono text-[17px] text-ink">
+                      <span className="tabular font-mono text-entry text-ink">
                         {formatNumber(calories)}
                       </span>
                       <span className="tabular font-mono text-micro text-faint">
@@ -550,15 +576,14 @@ export function Confirm() {
               <p className="text-caption leading-relaxed text-subtle">{roughNote}</p>
               {unresolved > 0 && (
                 <p className="text-caption leading-relaxed text-warn">
-                  {unresolved} item{unresolved === 1 ? "" : "s"} could not be matched to a food and
-                  will not be saved.
+                  {unresolvedNote}
                 </p>
               )}
               {error && <ErrorNote>{error}</ErrorNote>}
             </div>
 
             <div className="flex flex-none items-center justify-between gap-5 border-t border-line-2 px-8 py-4.5">
-              {footerTotals("text-[28px]")}
+              {footerTotals(28)}
               <button
                 onClick={save}
                 disabled={saving || drafts.length === 0}

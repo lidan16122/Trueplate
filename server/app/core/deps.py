@@ -56,11 +56,24 @@ RateLimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 Denylist = Annotated[AccessTokenDenylist, Depends(get_access_denylist)]
 
 
-def get_nutrition_resolver(db: DbSession) -> NutritionResolver:
+def get_open_food_facts() -> OpenFoodFactsClient:
+    """The barcode path's only upstream.
+
+    A dependency rather than a constructor call in the route, so the seam a
+    test substitutes is the same one every other route uses — and so
+    `services/nutrition/__init__` keeps its promise that nothing outside the
+    package reaches for a source client directly.
+    """
+    return OpenFoodFactsClient(get_http_client())
+
+
+FoodFacts = Annotated[OpenFoodFactsClient, Depends(get_open_food_facts)]
+
+
+def get_nutrition_resolver(db: DbSession, off: FoodFacts) -> NutritionResolver:
     # The HTTP client is process-wide and pooled; only the DB session is
     # per-request, which is why the resolver is built here rather than shared.
-    http = get_http_client()
-    return NutritionResolver(db, UsdaClient(http), OpenFoodFactsClient(http))
+    return NutritionResolver(db, UsdaClient(get_http_client()), off)
 
 
 Resolver = Annotated[NutritionResolver, Depends(get_nutrition_resolver)]

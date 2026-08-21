@@ -178,6 +178,32 @@ class NutritionFacts(BaseModel):
     carbs_g: float
     fat_g: float
 
+    @classmethod
+    def for_portion(cls, match: NutritionMatch | None, grams: float) -> NutritionFacts:
+        """Scale a per-100 g match to an actual portion.
+
+        The one place this arithmetic lives on the response side. It was written
+        out three times — here, in the resolver, and in the barcode service —
+        which is two chances for a portion to be scaled one way on the photo
+        path and another on the barcode path.
+
+        ``NutritionPer100gMixin.scaled_to`` is the ORM-side twin: same maths,
+        but it reads an ORM row and returns a dataclass, so neither can consume
+        the other without dragging the database layer into the schemas.
+
+        A missing match scales to zeroes rather than raising: an unresolved
+        food is still shown, still editable, and simply contributes nothing.
+        """
+        if match is None:
+            return cls(calories=0.0, protein_g=0.0, carbs_g=0.0, fat_g=0.0)
+        factor = grams / 100.0
+        return cls(
+            calories=match.kcal_per_100g * factor,
+            protein_g=match.protein_g_per_100g * factor,
+            carbs_g=match.carbs_g_per_100g * factor,
+            fat_g=match.fat_g_per_100g * factor,
+        )
+
 
 class NutritionMatch(BaseModel):
     """A candidate row from the nutrition database."""
@@ -187,6 +213,12 @@ class NutritionMatch(BaseModel):
     brand: str | None = None
     source: str
     source_ref: str | None = None
+    # The label's own serving, when the source has one — "1 bar (40 g)". Only
+    # barcode products carry this; a `foods` row has no serving to speak of.
+    # Display-only, and the reason `food_entries.serving_description` can read
+    # "1 bar" instead of "40 g" for a scanned item, where there is no household
+    # unit for the model to have estimated.
+    serving_description: str | None = None
     kcal_per_100g: float
     protein_g_per_100g: float
     carbs_g_per_100g: float
@@ -220,10 +252,6 @@ class FoodDetectionResponse(BaseModel):
     # True when this came from the AI cache rather than a fresh model call.
     cached: bool = False
     notes: str | None = None
-
-    @property
-    def rough_count(self) -> int:
-        return sum(1 for item in self.items if item.is_rough)
 
 
 class TextDetectionRequest(BaseModel):
@@ -286,7 +314,10 @@ def anthropic_tool_schema() -> dict:
         "description": (
             "Record the foods visible in the meal and estimate the edible mass of each "
             "in grams. Do not estimate calories or macronutrients — those are looked up "
-            "from a nutrition database using the labels and search terms you provide."
+            "from a nutrition database using the labels and search terms you provide. "
+            "`foods` takes one entry per distinct food: a plate of toast, avocado and an "
+            "egg is three entries, not one. Do not omit sides, drinks, spreads or "
+            "garnishes, and do not merge two foods into a single entry."
         ),
         "strict": True,
         "input_schema": _strip_unsupported(FoodDetectionResult.model_json_schema()),

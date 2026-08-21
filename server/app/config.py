@@ -100,8 +100,10 @@ class Settings(BaseSettings):
     # by default. Sized with headroom: too tight and a reply truncates mid-tool-call.
     anthropic_max_tokens: int = 8000
     # The main cost lever per photo. `low` and `medium` are unusually strong on
-    # this model, so start low and raise only if portion quality demands it —
-    # raising `effort` is cheaper to try than re-engineering the prompt.
+    # this model, so `low` is worth trying before any prompt work — raising
+    # effort is cheaper to try than re-engineering the prompt, and cheaper to
+    # undo. `medium` is the starting point because it is the setting the
+    # pipeline was actually measured at, not because low was ruled out.
     anthropic_effort: str = "medium"
     # Vision plus a tool loop is slow; the SDK's 10-minute default is far longer
     # than we ever want to hold a request open.
@@ -136,10 +138,20 @@ class Settings(BaseSettings):
 
     # A wrong row written back is served to every future lookup, so a rough
     # third-rung match is left to re-resolve next time rather than frozen.
-    foods_writeback_min_confidence: float = 0.6
+    #
+    # Deliberately equal to SURE_THRESHOLD rather than derived from it: the two
+    # answer different questions — that one is "warn this user", this one is
+    # "serve every future user" — and they should be free to move apart. Lower
+    # it to cache more aggressively, raise it if a bad row ever reaches `foods`.
+    foods_writeback_min_confidence: float = 0.75
     # Upstream revises figures. Past this age a row is re-fetched on read
     # instead of being trusted indefinitely.
     foods_ttl_days: int = 30
+
+    # Cached detections expire too. Without this a photo answered once is
+    # answered the same way forever, so an improvement to the prompt or a model
+    # upgrade would never reach anyone who had already logged that meal.
+    detections_ttl_days: int = 30
 
     @field_validator("web_search_allowed_domains", mode="before")
     @classmethod

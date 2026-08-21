@@ -114,7 +114,7 @@ async def test_a_barcode_hit_is_never_flagged_as_a_rough_guess(
     match, grams, serving = await barcode_service.lookup(db_session, off, EAN13)
     response = barcode_service.to_response(match, grams, serving, None)
 
-    assert response.rough_count == 0
+    assert not any(item.is_rough for item in response.items)
     assert response.items[0].confidence_label == "Fairly sure"
     # 450 kcal/100 g at a 30 g serving.
     assert response.totals.calories == pytest.approx(135.0)

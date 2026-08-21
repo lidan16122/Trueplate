@@ -79,7 +79,9 @@
   --text-label: 12px; /* uppercase eyebrows */
   --text-caption: 13px; /* secondary rows */
   --text-body: 14px; /* default UI text */
+  --text-item: 15px; /* the name of one row in a list */
   --text-lead: 16px; /* emphasised body */
+  --text-entry: 17px; /* an editable figure, and the number beside it */
   --text-title: 19px; /* card titles, brand mark */
   --text-figure: 34px; /* the big calorie number */
 

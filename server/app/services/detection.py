@@ -136,10 +136,15 @@ as the meal.
 
 ## Report every food
 
-Return one entry per distinct food. "Chicken with rice and broccoli" is three entries, not \
-one. Never drop an item because it is small, a side, a garnish, a sauce or a drink, and never \
-fold two foods into a single entry — a missing item is a missing meal to the person logging it. \
-If the input names five things, `foods` has five entries.
+Return one entry per distinct food. "Chicken with rice and broccoli" is three entries; \
+"toast with avocado and a boiled egg" is three entries. Never drop an item because it is \
+small, a side, a garnish, a spread, a sauce or a drink, and never fold two foods into a \
+single entry — a missing item is a missing meal to the person logging it.
+
+Before you call the tool, count the distinct foods in the input and check `foods` has that \
+many entries. A dish named as a combination ("toast with X and Y") is still its components. \
+Silently reporting one of three is the most damaging mistake you can make here, because the \
+user sees a plausible answer and has no idea anything is missing.
 
 ## Search terms are a ladder
 
@@ -332,6 +337,7 @@ class DetectionService:
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": blocks}]
         spend = _Spend()
+        nudged = False
 
         for _ in range(_MAX_TURNS):
             try:
@@ -413,7 +419,35 @@ class DetectionService:
                     spend.cache_write,
                     spend.usd,
                 )
-                return FoodDetectionResult.model_validate(final.input)
+                result = FoodDetectionResult.model_validate(final.input)
+
+                # Observed on the text path: the model classifies the input as
+                # `food`, writes `notes` describing the very items it saw, and
+                # still hands back an empty `foods` list. It contradicts itself,
+                # so ask once rather than reporting "nothing recognisable" over
+                # a meal the model just described.
+                #
+                # Only when it claims food. An empty list *with* `not_food` is
+                # the guardrail working exactly as designed.
+                if result.input_kind != "not_food" and not result.foods and not nudged:
+                    nudged = True
+                    logger.info("Model returned no foods but called it %r; asking again",
+                                result.input_kind)
+                    messages.append({"role": "assistant", "content": response.content})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "You reported no foods, but classified this as "
+                                f"'{result.input_kind}'. List every distinct food in "
+                                "`foods`, one entry each. If it genuinely contains no "
+                                "food, set input_kind to 'not_food'."
+                            ),
+                        }
+                    )
+                    continue
+
+                return result
 
             zooms = [b for b in tool_calls if b.name == ZOOM_TOOL_NAME]
             if zooms and image is not None:

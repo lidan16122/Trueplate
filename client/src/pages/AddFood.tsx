@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
+import { ErrorNote } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatDayLabel, today } from "@/lib/format";
 import type { FoodDetectionResponse } from "@/types/api";
@@ -210,7 +211,7 @@ export function AddFood() {
               className="flex w-[76px] flex-col items-center gap-[7px]"
             >
               <span
-                className={`flex h-12 w-12 items-center justify-center rounded-full border text-[17px] text-white transition-colors ${
+                className={`flex h-12 w-12 items-center justify-center rounded-full border text-entry text-white transition-colors ${
                   mode === "text" ? "border-accent bg-accent" : "border-line-dark hover:bg-ink-2"
                 }`}
               >
@@ -315,12 +316,12 @@ export function AddFood() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="chicken breast, a cup of rice, roasted broccoli"
-                className="flex-1 resize-none rounded-card border border-line-card px-4 py-3.5 text-[15px] leading-relaxed text-ink outline-none placeholder:text-faint focus:border-accent"
+                className="flex-1 resize-none rounded-card border border-line-card px-4 py-3.5 text-item leading-relaxed text-ink outline-none placeholder:text-faint focus:border-accent"
               />
               <button
                 onClick={handleText}
                 disabled={busy !== null || description.trim().length < 2}
-                className="h-11.5 rounded-md bg-ink text-[15px] font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
+                className="h-11.5 rounded-md bg-ink text-item font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
               >
                 {busy === "text" ? "Reading…" : "Estimate portions"}
               </button>
@@ -329,14 +330,14 @@ export function AddFood() {
             <div className="flex flex-none flex-col gap-3 rounded-2xl border border-line px-5.5 py-4.5">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="upc-desktop" className="text-[15px] font-semibold text-ink">
+                  <label htmlFor="upc-desktop" className="text-item font-semibold text-ink">
                     Enter a barcode
                   </label>
                   <span className="text-caption text-subtle">
                     Scanning works on your phone. Here, type the number.
                   </span>
                 </div>
-                <span className="text-[15px] tracking-[0.12em] text-icon-faint">|||</span>
+                <span className="text-item tracking-[0.12em] text-icon-faint">|||</span>
               </div>
               <div className="flex gap-2">
                 <input
@@ -345,7 +346,7 @@ export function AddFood() {
                   value={upc}
                   onChange={(e) => setUpc(e.target.value)}
                   placeholder="5000112637939"
-                  className="tabular h-11 min-w-0 flex-1 rounded-md border border-line-control px-3.5 font-mono text-[15px] text-ink outline-none placeholder:text-faint focus:border-accent"
+                  className="tabular h-11 min-w-0 flex-1 rounded-md border border-line-control px-3.5 font-mono text-item text-ink outline-none placeholder:text-faint focus:border-accent"
                 />
                 <button
                   onClick={() => void handleBarcode({ upc })}
@@ -358,8 +359,8 @@ export function AddFood() {
             </div>
 
             {error && (
-              <div className="flex-none rounded-card border border-warn/30 bg-warn/5 px-4 py-3 text-caption leading-relaxed text-warn">
-                {error}
+              <div className="flex-none">
+                <ErrorNote>{error}</ErrorNote>
               </div>
             )}
           </div>

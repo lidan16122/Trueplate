@@ -14,6 +14,7 @@ the user abandoned before confirming.
 
 import hashlib
 import logging
+from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
@@ -33,8 +34,28 @@ def hash_image(data: bytes) -> str:
     Content-based rather than per-user: the same photo yields the same foods
     whoever uploaded it, and sharing the entry across users is the whole saving.
     Nothing user-identifying is stored under the key — only the detected foods.
+
+    Deliberately depends on the bytes and nothing else, because this value is
+    also ``food_entries.image_hash`` — the key that groups one photo's entries
+    together. Folding the model or prompt into it would make that grouping
+    change under a config edit. The *cache* key is derived separately, below.
     """
     return hashlib.sha256(data).hexdigest()
+
+
+def photo_cache_key(image_hash: str) -> str:
+    """Cache key for a photo detection.
+
+    The model id and effort are folded in for the same reason they are on the
+    text path: they change the answer. Keying the cache on image bytes alone
+    would keep serving a pre-upgrade reading of a meal to anyone who had
+    already logged it, with no way to invalidate short of emptying the table.
+    """
+    return _key(image_hash, settings.anthropic_model, settings.anthropic_effort)
+
+
+def _key(*parts: str) -> str:
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
 def hash_text(description: str, meal_type: MealType | None) -> str:
@@ -46,10 +67,12 @@ def hash_text(description: str, meal_type: MealType | None) -> str:
     until every entry aged out.
     """
     normalized = " ".join(description.lower().split())
-    material = "|".join(
-        [normalized, str(meal_type or ""), settings.anthropic_model, settings.anthropic_effort]
+    return _key(
+        normalized,
+        str(meal_type or ""),
+        settings.anthropic_model,
+        settings.anthropic_effort,
     )
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 async def read(db: AsyncSession, cache_key: str) -> FoodDetectionResponse | None:
@@ -62,6 +85,18 @@ async def read(db: AsyncSession, cache_key: str) -> FoodDetectionResponse | None
     row = await db.get(Detection, cache_key)
     if row is None:
         return None
+
+    # Postgres returns an aware datetime for DateTime(timezone=True); SQLite,
+    # which the suite runs on, returns a naive one for the same column.
+    created = row.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=UTC)
+    if datetime.now(UTC) - created > timedelta(days=settings.detections_ttl_days):
+        # Expired rather than wrong. Deleting it here keeps the table from
+        # growing without bound, since nothing else ever prunes it.
+        await db.delete(row)
+        return None
+
     try:
         response = FoodDetectionResponse.model_validate(row.payload)
     except ValidationError:
@@ -85,12 +120,18 @@ async def write(
         existing.payload = response.model_dump(mode="json")
         return
 
-    db.add(
-        Detection(cache_key=cache_key, kind=kind, payload=response.model_dump(mode="json"))
-    )
     try:
-        await db.flush()
+        # A SAVEPOINT, not the request's transaction: this runs after the
+        # resolver has already written foods rows on the same session, and the
+        # route commits once at the end. Rolling the whole thing back to skip a
+        # duplicate cache row would discard those write-backs.
+        async with db.begin_nested():
+            db.add(
+                Detection(
+                    cache_key=cache_key, kind=kind, payload=response.model_dump(mode="json")
+                )
+            )
     except IntegrityError:
         # Two identical photos landed at once. Whoever won stored the same
         # answer, so there is nothing to reconcile.
-        await db.rollback()
+        pass

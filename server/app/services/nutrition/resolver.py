@@ -1,7 +1,7 @@
 """The resolution ladder: turn a detected food into a sourced nutrition row.
 
 ```
-foods (cached)  ->  USDA FDC  ->  Open Food Facts  ->  unresolved
+foods (cached)  ->  barcode_products  ->  USDA FDC  ->  Open Food Facts  ->  unresolved
 ```
 
 walked once per search term, most specific first. The model supplies
@@ -15,9 +15,14 @@ than failing — *provided the user can see that it was approximate and correct
 it*. That is what ``is_rough`` and ``alternatives`` on the response are for, and
 why a fall-back match is never presented as a confident one.
 
+There is deliberately no separate "generic category" rung. The model's own
+broadest search term *is* that rung — it is asked for a widening ladder ending
+in a category ("…, 'rice'"), so a hand-built food taxonomy here would duplicate
+something already in the request and immediately start drifting from it.
+
 The model never contributes a number here. It contributes names; every figure
 below is read from a database row or an upstream API and scaled by
-``NutritionPer100gMixin.scaled_to``.
+``NutritionFacts.for_portion``.
 """
 
 import logging
@@ -30,6 +35,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.models.barcode import BarcodeProduct
 from app.db.models.food import Food
 from app.enums import NutritionSource
 from app.schemas.detection import (
@@ -92,19 +98,6 @@ def canonical_term(term: str) -> str:
     return _WHITESPACE.sub(" ", term.strip()).lower()
 
 
-def _facts(match: NutritionMatch | None, grams: float) -> NutritionFacts:
-    """Scale a per-100 g match to the portion. Zeroes when nothing matched."""
-    if match is None:
-        return NutritionFacts(calories=0.0, protein_g=0.0, carbs_g=0.0, fat_g=0.0)
-    factor = grams / 100.0
-    return NutritionFacts(
-        calories=match.kcal_per_100g * factor,
-        protein_g=match.protein_g_per_100g * factor,
-        carbs_g=match.carbs_g_per_100g * factor,
-        fat_g=match.fat_g_per_100g * factor,
-    )
-
-
 def _match_from_row(row: Food) -> NutritionMatch:
     return NutritionMatch(
         food_id=str(row.id),
@@ -151,18 +144,29 @@ class NutritionResolver:
             # the model's most specific description did not resolve, so what we
             # found is broader than what the user ate.
             fell_back = index > 0
+            # What the *user* is shown. SURE_THRESHOLD is the display split, and
+            # lives in schemas/log.py so the confirm screen and the day view
+            # collapse a confidence float to the same two words.
             is_rough = fell_back or not hit.precise or detected.confidence < SURE_THRESHOLD
 
-            if not is_rough:
-                # Only a first-term, confident match *from a precise rung* earns a
-                # place in the shared table. A wrong row written back is served to
-                # every future lookup and nobody ever sees it happen.
+            # What enters the *shared table* — a separate decision with a
+            # separate floor, because the two answer different questions. "Is
+            # this worth warning one user about" is not "is this worth serving
+            # to every future user", and the second deserves its own dial.
+            trustworthy = (
+                hit.precise
+                and not fell_back
+                and detected.confidence >= settings.foods_writeback_min_confidence
+            )
+            if trustworthy:
+                # A wrong row written back is served to every future lookup and
+                # nobody ever sees it happen.
                 match = await self._write_back(term, match)
 
             return ResolvedFoodItem(
                 detected=detected,
                 matched=match,
-                nutrition=_facts(match, detected.estimated_grams),
+                nutrition=NutritionFacts.for_portion(match, detected.estimated_grams),
                 alternatives=hit.alternatives,
                 confidence_label="Rough guess" if is_rough else "Fairly sure",
                 is_rough=is_rough,
@@ -175,7 +179,7 @@ class NutritionResolver:
         return ResolvedFoodItem(
             detected=detected,
             matched=None,
-            nutrition=_facts(None, detected.estimated_grams),
+            nutrition=NutritionFacts.for_portion(None, detected.estimated_grams),
             alternatives=[],
             confidence_label="Rough guess",
             is_rough=True,
@@ -194,6 +198,14 @@ class NutritionResolver:
         if cached is not None:
             # Already vetted — it only got into the table by passing this same gate.
             return _Hit(cached, [], precise=True)
+
+        scanned = await self._lookup_barcode_product(term)
+        if scanned is not None:
+            # Something previously scanned by name. The row got there through an
+            # exact UPC, so the figures are as good as a barcode's — but the
+            # *name* match that found it here is not, so this is not `precise`
+            # and never earns a write-back into `foods`.
+            return _Hit(scanned, [], precise=False)
 
         usda_matches = await self._usda.search(term)
         if usda_matches:
@@ -243,6 +255,30 @@ class NutritionResolver:
         )
         return _match_from_row(fresh[0])
 
+    async def _lookup_barcode_product(self, term: str) -> NutritionMatch | None:
+        """Look for a previously scanned product by name.
+
+        Someone scans a protein bar on Monday and types its name on Friday; the
+        nutrition is already sitting in ``barcode_products``, and reaching a
+        packaged product this way beats a free-text search for it every time.
+        """
+        row = await self._db.scalar(
+            select(BarcodeProduct).where(func.lower(BarcodeProduct.name) == canonical_term(term))
+        )
+        if row is None:
+            return None
+        return NutritionMatch(
+            name=row.name,
+            brand=row.brand,
+            source=row.source,
+            source_ref=row.upc,
+            serving_description=row.serving_description,
+            kcal_per_100g=row.kcal_per_100g,
+            protein_g_per_100g=row.protein_g_per_100g,
+            carbs_g_per_100g=row.carbs_g_per_100g,
+            fat_g_per_100g=row.fat_g_per_100g,
+        )
+
     def _is_fresh(self, row: Food) -> bool:
         # Seeded rows are curated by hand and have no upstream to re-check, so
         # they never expire. Only fetched rows carry a TTL.
@@ -288,14 +324,18 @@ class NutritionResolver:
             fat_g_per_100g=match.fat_g_per_100g,
             fetched_at=now,
         )
-        self._db.add(row)
         try:
-            await self._db.flush()
+            # A SAVEPOINT, not the whole transaction. This session is shared by
+            # the entire request and committed once at the end, and a decomposed
+            # dish resolves several foods through here in a loop — so a bare
+            # rollback on the fourth would silently discard the write-backs for
+            # the first three, and leave the route committing a dead session.
+            async with self._db.begin_nested():
+                self._db.add(row)
         except IntegrityError:
             # Another request resolved the same term first. The unique index is
             # the backstop that makes this a lost race rather than a duplicate
             # row; re-read and use the winner.
-            await self._db.rollback()
             winner = await self._db.scalar(
                 select(Food).where(Food.name == name, Food.source == match.source)
             )

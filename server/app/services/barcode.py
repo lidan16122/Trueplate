@@ -105,6 +105,7 @@ def _match_from_row(row: BarcodeProduct) -> NutritionMatch:
         brand=row.brand,
         source=row.source,
         source_ref=row.upc,
+        serving_description=row.serving_description,
         kcal_per_100g=row.kcal_per_100g,
         protein_g_per_100g=row.protein_g_per_100g,
         carbs_g_per_100g=row.carbs_g_per_100g,
@@ -150,14 +151,25 @@ async def lookup(
             carbs_g_per_100g=found.match.carbs_g_per_100g,
             fat_g_per_100g=found.match.fat_g_per_100g,
         )
-        db.add(row)
         try:
-            await db.flush()
+            # A SAVEPOINT rather than the request's whole transaction — the
+            # route commits this same session afterwards, and a bare rollback
+            # would leave it committing a dead session.
+            async with db.begin_nested():
+                db.add(row)
         except IntegrityError:
-            await db.rollback()
+            # Another request cached the same UPC first; theirs is the same
+            # product, so there is nothing to reconcile.
+            pass
 
         grams = found.serving_size_g or 100.0
-        return found.match, grams, found.serving_description
+        # The OFF client builds the match without a serving — that field only
+        # means anything on the barcode path — so attach it here, where the
+        # product's own label is in hand.
+        match = found.match.model_copy(
+            update={"serving_description": found.serving_description}
+        )
+        return match, grams, found.serving_description
 
     raise BarcodeNotFood(
         "That barcode is not a food we can find. It may be a non-food product, "
@@ -176,13 +188,7 @@ def to_response(
     Every path ends at the same ``FoodDetectionResponse`` so the confirmation
     screen needs no idea which one produced it.
     """
-    factor = grams / 100.0
-    nutrition = NutritionFacts(
-        calories=match.kcal_per_100g * factor,
-        protein_g=match.protein_g_per_100g * factor,
-        carbs_g=match.carbs_g_per_100g * factor,
-        fat_g=match.fat_g_per_100g * factor,
-    )
+    nutrition = NutritionFacts.for_portion(match, grams)
     detected = DetectedFood(
         label=match.name,
         estimated_grams=grams,

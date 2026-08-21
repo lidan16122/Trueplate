@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 import httpx
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -210,3 +211,77 @@ def test_open_food_facts_answers_about_a_different_food_are_rejected(
     term: str, name: str, relevant: bool
 ) -> None:
     assert _is_relevant(term, name) is relevant
+
+
+async def test_a_lost_write_back_race_does_not_discard_earlier_work(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The session is shared by the whole request and committed once at the end.
+
+    A decomposed dish resolves several foods through `_write_back` in a loop, so
+    rolling back the *transaction* to skip one duplicate would silently discard
+    the write-backs for every food before it. Only the SAVEPOINT may unwind.
+    """
+    db_session.add(Food(name="already resolved", source="usda_fdc", kcal_per_100g=111.0))
+    await db_session.flush()
+
+    def explode(*_args, **_kwargs):
+        raise IntegrityError("INSERT INTO foods", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(db_session, "begin_nested", explode)
+
+    transport = nutrition_transport(usda=usda_food("Oats, rolled", 371.0))
+    item = await _resolver(db_session, transport).resolve(_detected("oats", ["rolled oats"]))
+
+    # The losing insert still yields a usable match for this request...
+    assert item.matched is not None
+    # ...and the row written before it is untouched.
+    survivor = await db_session.scalar(select(Food).where(Food.name == "already resolved"))
+    assert survivor is not None, "an earlier write-back was rolled back by a later conflict"
+    assert survivor.kcal_per_100g == 111.0
+
+
+async def test_a_spurious_usda_400_is_retried_rather_than_lost(
+    db_session: AsyncSession,
+) -> None:
+    """FDC's front end answers valid requests with a 400 about half the time.
+
+    Without a retry the resolver degrades politely to Open Food Facts and the
+    user simply gets a worse answer, with nothing anywhere saying why — so this
+    pins the retry rather than the fallback.
+    """
+    attempts = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "foods/search" not in request.url.path:
+            return httpx.Response(404, json={})
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            return httpx.Response(400, text="<html>400 Bad Request</html>")
+        return httpx.Response(200, json=usda_food("Avocado, raw", 160.0))
+
+    item = await _resolver(db_session, httpx.MockTransport(handler)).resolve(
+        _detected("avocado", ["avocado"])
+    )
+
+    assert attempts["n"] == 3, "should have retried past the spurious 400s"
+    assert item.matched is not None
+    assert item.matched.source == "usda_fdc"
+    assert item.matched.kcal_per_100g == 160.0
+
+
+async def test_a_real_rate_limit_is_not_retried(db_session: AsyncSession) -> None:
+    """429 is per-IP and hour-long; hammering it extends the block."""
+    attempts = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "foods/search" in request.url.path:
+            attempts["n"] += 1
+            return httpx.Response(429, json={"error": "rate limited"})
+        return httpx.Response(200, json={"products": []})
+
+    await _resolver(db_session, httpx.MockTransport(handler)).resolve(
+        _detected("avocado", ["avocado"])
+    )
+
+    assert attempts["n"] == 1, "429 must not be retried"

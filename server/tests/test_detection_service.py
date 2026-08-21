@@ -93,13 +93,22 @@ async def test_non_food_input_is_refused_rather_than_answered(db_session: AsyncS
 async def test_food_photo_with_nothing_identifiable_is_not_silently_empty(
     db_session: AsyncSession,
 ) -> None:
-    service, _ = _service(
+    """Asked twice, still nothing — then it really is nothing, and saying so is
+    better than saving a meal with no items in it."""
+    empty = food_result(foods=[], notes="Too blurry.")
+    service, fake = _service(
         db_session,
-        [message([tool_use(TOOL_NAME, food_result(foods=[], notes="Too blurry."))])],
+        [
+            message([tool_use(TOOL_NAME, empty)]),
+            message([tool_use(TOOL_NAME, empty)]),
+        ],
     )
 
     with pytest.raises(NothingDetected):
         await service.detect_text("something")
+
+    # Nudged exactly once — a model that insists is believed the second time.
+    assert len(fake.calls) == 2
 
 
 async def test_a_model_refusal_does_not_surface_as_an_index_error(
@@ -210,3 +219,36 @@ async def test_missing_api_key_is_a_clear_failure_not_a_crash(
 
     with pytest.raises(DetectionUnavailable, match="ANTHROPIC_API_KEY"):
         await DetectionService(resolver).detect_text("chicken")
+
+
+async def test_an_empty_food_list_that_claims_food_is_queried_again(
+    db_session: AsyncSession,
+) -> None:
+    """Observed live: the model classifies the input as `food`, writes notes
+    describing the items it saw, and hands back an empty `foods` list. Reporting
+    "nothing recognisable" over a meal it just described is the wrong answer."""
+    service, fake = _service(
+        db_session,
+        [
+            message([tool_use(TOOL_NAME, food_result(foods=[], notes="Toast and an egg."))]),
+            message([tool_use(TOOL_NAME, food_result())]),
+        ],
+    )
+
+    response = await service.detect_text("toast and a boiled egg")
+
+    assert len(fake.calls) == 2, "should have asked again rather than giving up"
+    assert len(response.items) == 1
+
+
+async def test_an_empty_list_with_not_food_is_left_alone(db_session: AsyncSession) -> None:
+    """That combination is the guardrail working, not a contradiction."""
+    service, fake = _service(
+        db_session,
+        [message([tool_use(TOOL_NAME, food_result(input_kind="not_food", foods=[]))])],
+    )
+
+    with pytest.raises(NotFoodError):
+        await service.detect_text("my dog")
+
+    assert len(fake.calls) == 1, "a not_food refusal must not be second-guessed"

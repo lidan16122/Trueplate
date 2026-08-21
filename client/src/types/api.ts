@@ -166,8 +166,28 @@ export interface DetectedFood {
    * "1" of anything.
    */
   household_quantity: number | null;
-  household_unit: string | null;
+  household_unit: HouseholdUnit | null;
 }
+
+/** Mirrors the closed set on the server; widening it here loses the check. */
+export type HouseholdUnit =
+  | "cup"
+  | "tbsp"
+  | "tsp"
+  | "slice"
+  | "piece"
+  | "medium"
+  | "small"
+  | "large"
+  | "bowl"
+  | "plate"
+  | "glass"
+  | "can"
+  | "bottle"
+  | "scoop"
+  | "handful"
+  | "fillet"
+  | "egg";
 
 export interface NutritionMatch {
   food_id: string | null;
@@ -175,6 +195,8 @@ export interface NutritionMatch {
   brand: string | null;
   source: NutritionSource;
   source_ref: string | null;
+  /** The label's own serving ("1 bar (40 g)"). Barcode products only. */
+  serving_description: string | null;
   kcal_per_100g: number;
   protein_g_per_100g: number;
   carbs_g_per_100g: number;
