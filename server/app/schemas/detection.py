@@ -89,9 +89,15 @@ class DetectedFood(BaseModel):
     preparation: Preparation = Field(
         default="unknown", description="Cooking method, which changes the nutrition lookup"
     )
+    # No default, and that is load-bearing rather than tidiness — the same trap
+    # ``FoodDetectionResult`` documents for ``foods``, live on a second field.
+    # Pydantic emits a field as required only when it has no default, so
+    # ``default_factory=list`` silently kept this out of the schema's
+    # ``required`` array, and the model duly omitted it: a detected food arrived
+    # carrying no terms at all. That leaves the entire input to the resolution
+    # ladder as a bare label, which is the one thing the ladder cannot widen.
     search_terms: list[str] = Field(
-        default_factory=list,
-        description="Terms to query the nutrition database with, most specific first",
+        description="Terms to query the nutrition database with, most specific first"
     )
     portion_reasoning: str | None = Field(
         default=None,
@@ -149,8 +155,30 @@ class FoodDetectionResult(BaseModel):
             "When this is 'not_food', return an empty foods list."
         )
     )
+    # Declared *before* ``foods``, and the ordering is the point rather than
+    # taste. Tool arguments are generated in schema order, so naming every
+    # component here first puts the inventory into the context the food list is
+    # then written against — the model reads back its own enumeration instead of
+    # recalling the image. Asked for afterwards it is a summary of a decision
+    # already made, which is how a five-component plate came back as two entries.
+    #
+    # A list of names, and it replaced a prose sentence plus an integer count.
+    # Both of those were observed failing together: the model wrote a faultless
+    # five-item description, wrote `component_count: 5`, returned one food, and
+    # when asked "you named 5 but returned 1" came back with two. A bare number
+    # makes the server's complaint arithmetic — the model has to reconstruct its
+    # own list from a digit. Names let the re-ask say *which* foods are missing,
+    # and make writing five of them and then one food a far starker thing to
+    # commit to than writing `1`.
+    components: list[str] = Field(
+        description=(
+            "Name every distinct food you can see, one short phrase each, before you "
+            "list anything: ['basmati rice', 'bone-in chicken drumstick', 'pulled "
+            "chicken pieces', 'potato slices in masala', 'onion masala gravy']. "
+            "`foods` must then hold exactly one entry per name here."
+        )
+    )
     foods: list[DetectedFood]
-    meal_description: str = Field(description="One-line summary of the plate")
     overall_confidence: float = Field(
         ge=0, le=1, description="0-1 confidence in the reading of the meal as a whole"
     )
@@ -246,11 +274,27 @@ class FoodDetectionResponse(BaseModel):
     # Human provenance line, e.g. "From your photo".
     source_label: str
     meal_type: MealType
+    # The model's own enumeration of what it saw, carried through to the confirm
+    # screen. It was being written on every detection and read by nobody — and a
+    # list of one row under "rice, a chicken leg, potato slices and gravy" is the
+    # difference between a miss the user can see and one they cannot.
+    #
+    # Required, with no default. That is load-bearing beyond tidiness: a payload
+    # cached before this field existed no longer validates, and
+    # `detection_cache.read` treats that as a miss and re-detects. Adding a
+    # default would leave every stale reading in place, silently.
+    meal_description: str
     items: list[ResolvedFoodItem]
     totals: NutritionFacts
     image_hash: str | None = None
     # True when this came from the AI cache rather than a fresh model call.
     cached: bool = False
+    # The reading is worth showing but not worth *keeping*: the model disagreed
+    # with its own component count, or a photographed meal came back as a single
+    # food. Caching one of these freezes a transient failure against the photo's
+    # hash for `detections_ttl_days`, which turns "try again" into a button that
+    # replays the same wrong answer. See `api/routes/ai.py`.
+    is_provisional: bool = False
     notes: str | None = None
 
 

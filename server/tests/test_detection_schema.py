@@ -134,9 +134,27 @@ class TestStrictToolCompatibility:
         assert present == [], f"schema carries keywords strict tool use rejects: {present}"
 
     def test_bounds_are_still_enforced_when_parsing_the_reply(self):
-        """Stripping them from the wire schema must not stop them validating."""
+        """Stripping them from the wire schema must not stop them validating.
+
+        Every other field is supplied deliberately: with one missing, this
+        passes on the missing field alone and would keep passing if the gram
+        bound were deleted outright.
+        """
         with pytest.raises(ValidationError):
-            DetectedFood(label="rice", estimated_grams=99_999, confidence=0.5)
+            DetectedFood(
+                label="rice", estimated_grams=99_999, confidence=0.5, search_terms=["rice"]
+            )
+
+    def test_search_terms_is_required(self):
+        """Regression, seen live: the model returned a food with no terms at all.
+
+        ``default_factory=list`` reads as a harmless convenience and is not one
+        — Pydantic drops a defaulted field from ``required``, so the schema
+        stopped asking for the only input the resolution ladder has. The food
+        came back, resolved against a bare label, and nothing anywhere failed.
+        """
+        schema = anthropic_tool_schema()["input_schema"]
+        assert "search_terms" in schema["$defs"]["DetectedFood"]["required"]
 
     def test_household_unit_is_a_closed_set(self):
         """As free text this field attracted a paragraph of the model's own

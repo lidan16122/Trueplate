@@ -49,7 +49,12 @@ class FakeAnthropic:
         self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
 
     async def _create(self, **kwargs: Any) -> Any:
-        self.calls.append(kwargs)
+        # `messages` is one list the service appends to across the whole loop, so
+        # recording `kwargs` as handed over stores a live reference: every call
+        # would share it and `calls[0]["messages"][-1]` would report the *last*
+        # thing sent, not the first. Snapshotting the list is what lets a test
+        # say "on the second call we sent this" and be right.
+        self.calls.append({**kwargs, "messages": list(kwargs.get("messages", []))})
         if not self._responses:
             raise AssertionError("FakeAnthropic ran out of scripted responses")
         return self._responses.pop(0)
@@ -59,7 +64,6 @@ def food_result(**overrides: Any) -> dict[str, Any]:
     """A valid ``FoodDetectionResult`` payload, minus whatever a test overrides."""
     payload: dict[str, Any] = {
         "input_kind": "food",
-        "meal_description": "Chicken with rice",
         "overall_confidence": 0.9,
         "notes": None,
         "foods": [
@@ -74,6 +78,12 @@ def food_result(**overrides: Any) -> dict[str, Any]:
         ],
     }
     payload.update(overrides)
+    # Derived rather than fixed, so a test that overrides `foods` does not
+    # accidentally also assert a self-contradicting reply: the service re-asks
+    # when the names and the entries disagree, which would silently consume a
+    # second queued response and make an unrelated test fail on the wrong thing.
+    # A test that *wants* the mismatch passes `components` explicitly.
+    payload.setdefault("components", [f["label"] for f in payload["foods"]])
     return payload
 
 

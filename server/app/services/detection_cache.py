@@ -24,6 +24,7 @@ from app.config import settings
 from app.db.models.detection import Detection
 from app.enums import DetectionMethod, MealType
 from app.schemas.detection import FoodDetectionResponse
+from app.services.detection import PROMPT_FINGERPRINT
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,18 @@ def hash_image(data: bytes) -> str:
 def photo_cache_key(image_hash: str) -> str:
     """Cache key for a photo detection.
 
-    The model id and effort are folded in for the same reason they are on the
-    text path: they change the answer. Keying the cache on image bytes alone
-    would keep serving a pre-upgrade reading of a meal to anyone who had
-    already logged it, with no way to invalidate short of emptying the table.
+    The model id, the effort and the prompt fingerprint are folded in for the
+    same reason they are on the text path: each of them changes the answer.
+    Keying the cache on image bytes alone would keep serving a pre-upgrade
+    reading of a meal to anyone who had already logged it, with no way to
+    invalidate short of emptying the table.
     """
-    return _key(image_hash, settings.anthropic_model, settings.anthropic_effort)
+    return _key(
+        image_hash,
+        settings.anthropic_model,
+        settings.anthropic_effort,
+        PROMPT_FINGERPRINT,
+    )
 
 
 def _key(*parts: str) -> str:
@@ -62,9 +69,10 @@ def hash_text(description: str, meal_type: MealType | None) -> str:
     """Content address for a typed description.
 
     Normalised so trivial differences in spacing or case share an entry. The
-    model id and effort are folded in because a change to either changes the
-    answer — without them, tuning the prompt would keep serving the old result
-    until every entry aged out.
+    model id, the effort and the prompt fingerprint are folded in because a
+    change to any of them changes the answer — the fingerprint most literally
+    so, since without it tuning the prompt keeps serving the old result until
+    every entry ages out.
     """
     normalized = " ".join(description.lower().split())
     return _key(
@@ -72,6 +80,7 @@ def hash_text(description: str, meal_type: MealType | None) -> str:
         str(meal_type or ""),
         settings.anthropic_model,
         settings.anthropic_effort,
+        PROMPT_FINGERPRINT,
     )
 
 

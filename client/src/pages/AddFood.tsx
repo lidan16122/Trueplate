@@ -30,6 +30,10 @@ export function AddFood() {
   const [busy, setBusy] = useState<null | "photo" | "text" | "barcode">(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  // Held, not sent. Choosing a photo used to fire the detection from the file
+  // input's own onChange, which made "a photo *and* a note" impossible to
+  // express — by the time there was anywhere to type, the request was gone.
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
 
   // The preview URL is handed to the confirm screen, which takes over revoking
@@ -63,26 +67,36 @@ export function AddFood() {
     return "Something went wrong";
   };
 
-  const handlePhoto = useCallback(
-    async (file: File) => {
-      const url = URL.createObjectURL(file);
-      setBusy("photo");
-      setError(null);
-      setPreview(url);
-      try {
-        // The typed description rides along when there is one: a stated
-        // quantity beats any visual estimate.
-        goToConfirm(await api.ai.detectPhoto(file, description), url);
-      } catch (err) {
-        setError(describeFailure(err));
-        setPreview(null);
-        URL.revokeObjectURL(url);
-      } finally {
-        setBusy(null);
-      }
-    },
-    [goToConfirm, description],
-  );
+  /** Show the photo and wait. No network call until the user asks for one. */
+  const stagePhoto = useCallback((file: File) => {
+    setError(null);
+    setPhotoFile(file);
+    // Replacing an earlier pick needs nothing extra: the effect above releases
+    // the previous object URL when this value changes.
+    setPreview(URL.createObjectURL(file));
+  }, []);
+
+  const clearPhoto = useCallback(() => {
+    setPhotoFile(null);
+    setPreview(null);
+  }, []);
+
+  const submitPhoto = useCallback(async () => {
+    if (!photoFile || !preview) return;
+    setBusy("photo");
+    setError(null);
+    try {
+      // The typed description rides along when there is one: a stated
+      // quantity beats any visual estimate.
+      goToConfirm(await api.ai.detectPhoto(photoFile, description), preview);
+    } catch (err) {
+      // The photo stays staged deliberately. A failure is usually worth one
+      // retry, and re-choosing the file to get it would be a punishment.
+      setError(describeFailure(err));
+    } finally {
+      setBusy(null);
+    }
+  }, [photoFile, preview, description, goToConfirm]);
 
   const handleText = useCallback(async () => {
     if (description.trim().length < 2) return;
@@ -117,9 +131,9 @@ export function AddFood() {
       e.preventDefault();
       setDragging(false);
       const file = e.dataTransfer.files?.[0];
-      if (file?.type.startsWith("image/")) void handlePhoto(file);
+      if (file?.type.startsWith("image/")) stagePhoto(file);
     },
-    [handlePhoto],
+    [stagePhoto],
   );
 
   return (
@@ -128,15 +142,38 @@ export function AddFood() {
       <div className="flex min-h-dvh flex-col bg-ink md:hidden">
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="flex h-full w-full max-w-[720px] flex-col items-center justify-center gap-2.5 overflow-hidden rounded-2xl border border-dashed border-line-dark">
-            {preview ? (
-              <img src={preview} alt="" className="h-full w-full object-cover" />
-            ) : mode === "text" ? (
+            {/*
+              `mode === "text"` is tested before `preview`, and that order is
+              the whole feature. The other way round, a staged photo hid the
+              textarea, so a note and a picture could never be given together —
+              which is exactly when a note is most useful ("half of this went
+              back in the pan").
+            */}
+            {mode === "text" ? (
               <div className="flex w-full max-w-[440px] flex-col gap-4 p-6">
+                {preview && (
+                  <div className="flex items-center gap-2.5">
+                    <img
+                      src={preview}
+                      alt=""
+                      className="h-10 w-10 flex-none rounded-chip object-cover"
+                    />
+                    <span className="min-w-0 flex-1 text-label text-on-dark-dim">
+                      Photo attached — your note refines it
+                    </span>
+                    <button
+                      onClick={clearPhoto}
+                      className="flex-none text-label text-on-dark underline-offset-2 transition-colors hover:text-white hover:underline"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
                 <label
                   htmlFor="meal-description"
                   className="font-mono text-label tracking-[0.08em] text-on-dark-dim"
                 >
-                  DESCRIBE THE MEAL
+                  {preview ? "ADD A NOTE" : "DESCRIBE THE MEAL"}
                 </label>
                 <textarea
                   id="meal-description"
@@ -144,15 +181,21 @@ export function AddFood() {
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder="chicken, rice and broccoli"
+                  placeholder={preview ? "no oil, half a portion" : "chicken, rice and broccoli"}
                   className="resize-none rounded-card border border-line-dark bg-ink-2 px-4 py-3 text-lead text-white outline-none placeholder:text-on-dark-faint focus:border-accent"
                 />
                 <button
-                  onClick={handleText}
-                  disabled={busy !== null || description.trim().length < 2}
+                  onClick={photoFile ? submitPhoto : handleText}
+                  // With a photo staged the note is optional, so the two-character
+                  // floor applies only when the text *is* the whole input.
+                  disabled={busy !== null || (!photoFile && description.trim().length < 2)}
                   className="h-12 rounded-card bg-white text-caption font-semibold text-ink transition-opacity disabled:opacity-40"
                 >
-                  {busy === "text" ? "Reading…" : "Find these foods"}
+                  {busy !== null
+                    ? "Reading…"
+                    : photoFile
+                      ? "Analyse photo and note"
+                      : "Find these foods"}
                 </button>
               </div>
             ) : mode === "barcode" ? (
@@ -187,6 +230,8 @@ export function AddFood() {
                   {busy === "barcode" ? "Looking up…" : "Find this product"}
                 </button>
               </div>
+            ) : preview ? (
+              <img src={preview} alt="" className="h-full w-full object-cover" />
             ) : (
               <>
                 <div className="font-mono text-label tracking-[0.08em] text-on-dark-dim">
@@ -220,15 +265,26 @@ export function AddFood() {
               <span className="text-label text-on-dark">Describe</span>
             </button>
 
+            {/*
+              One button, two jobs: it takes the photo, then it sends it. A
+              separate submit control would sit dead and greyed for the whole
+              time the screen is a viewfinder, which is most of the time.
+            */}
             <button
-              onClick={() => fileRef.current?.click()}
+              onClick={() => (photoFile ? void submitPhoto() : fileRef.current?.click())}
               disabled={busy !== null}
               className="flex flex-col items-center gap-[7px]"
-              aria-label="Take a photo"
+              aria-label={photoFile ? "Analyse this photo" : "Take a photo"}
             >
-              <span className="h-[76px] w-[76px] rounded-full border-[5px] border-line-dark bg-white transition-colors hover:border-accent" />
+              <span
+                className={`h-[76px] w-[76px] rounded-full border-[5px] transition-colors ${
+                  photoFile
+                    ? "border-accent bg-accent"
+                    : "border-line-dark bg-white hover:border-accent"
+                }`}
+              />
               <span className="text-label text-on-dark">
-                {busy === "photo" ? "Reading…" : "Photo"}
+                {busy === "photo" ? "Reading…" : photoFile ? "Analyse" : "Photo"}
               </span>
             </button>
 
@@ -246,6 +302,16 @@ export function AddFood() {
               <span className="text-label text-on-dark">Barcode</span>
             </button>
           </div>
+
+          {photoFile && (
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={busy !== null}
+              className="h-9 w-full text-label text-on-dark-dim transition-colors hover:text-white disabled:opacity-40"
+            >
+              Retake
+            </button>
+          )}
 
           <button
             onClick={() => navigate(-1)}
@@ -269,61 +335,88 @@ export function AddFood() {
         </header>
 
         <div className="flex min-h-0 flex-1 gap-6 p-8">
-          <button
-            onClick={() => fileRef.current?.click()}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setDragging(true);
-            }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            disabled={busy !== null}
-            className={`flex flex-[1.4] flex-col items-center justify-center gap-3.5 rounded-2xl border border-dashed p-8 transition-colors ${
-              dragging
-                ? "border-accent bg-accent-wash"
-                : "border-hairline-strong bg-panel hover:border-accent hover:bg-accent-wash"
-            }`}
-          >
-            {preview ? (
-              <img
-                src={preview}
-                alt=""
-                className="max-h-full max-w-full rounded-lg object-contain"
-              />
-            ) : (
-              <>
-                <span className="flex h-13 w-13 items-center justify-center rounded-lg border-[1.5px] border-icon-faint">
-                  <span className="h-4 w-4 rounded-full border-[1.5px] border-icon-faint" />
-                </span>
-                <span className="text-title font-semibold text-ink">
-                  {busy === "photo" ? "Reading the plate…" : "Drop a photo here"}
-                </span>
-                <span className="max-w-[280px] text-center text-body leading-relaxed text-subtle">
-                  Or click to browse. Trueplate reads the plate and proposes portions you can
-                  correct.
-                </span>
-              </>
+          {/*
+            Wrapped so "Remove photo" can sit outside the drop zone: the zone is
+            itself a <button>, and a button inside a button is invalid markup
+            that browsers resolve by dropping one of them.
+          */}
+          <div className="flex min-h-0 flex-[1.4] flex-col gap-3">
+            <button
+              onClick={() => fileRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              disabled={busy !== null}
+              className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3.5 rounded-2xl border border-dashed p-8 transition-colors ${
+                dragging
+                  ? "border-accent bg-accent-wash"
+                  : "border-hairline-strong bg-panel hover:border-accent hover:bg-accent-wash"
+              }`}
+            >
+              {preview ? (
+                <img
+                  src={preview}
+                  alt=""
+                  className="max-h-full max-w-full rounded-lg object-contain"
+                />
+              ) : (
+                <>
+                  <span className="flex h-13 w-13 items-center justify-center rounded-lg border-[1.5px] border-icon-faint">
+                    <span className="h-4 w-4 rounded-full border-[1.5px] border-icon-faint" />
+                  </span>
+                  <span className="text-title font-semibold text-ink">Drop a photo here</span>
+                  <span className="max-w-[280px] text-center text-body leading-relaxed text-subtle">
+                    Or click to browse. Add a note on the right if you want to — they are sent
+                    together.
+                  </span>
+                </>
+              )}
+            </button>
+
+            {photoFile && (
+              <button
+                onClick={clearPhoto}
+                disabled={busy !== null}
+                className="h-9 flex-none text-caption text-subtle transition-colors hover:text-ink disabled:opacity-40"
+              >
+                Remove photo
+              </button>
             )}
-          </button>
+          </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-4">
             <div className="flex flex-1 flex-col gap-3.5 rounded-2xl border border-line p-5.5">
               <label htmlFor="meal-description-desktop" className="text-lead font-semibold text-ink">
-                Describe the meal
+                {photoFile ? "Add a note" : "Describe the meal"}
               </label>
               <textarea
                 id="meal-description-desktop"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="chicken breast, a cup of rice, roasted broccoli"
+                placeholder={
+                  photoFile
+                    ? "no oil, half a portion — anything the photo cannot show"
+                    : "chicken breast, a cup of rice, roasted broccoli"
+                }
                 className="flex-1 resize-none rounded-card border border-line-card px-4 py-3.5 text-item leading-relaxed text-ink outline-none placeholder:text-faint focus:border-accent"
               />
               <button
-                onClick={handleText}
-                disabled={busy !== null || description.trim().length < 2}
+                onClick={photoFile ? submitPhoto : handleText}
+                // With a photo staged the note is optional, so the two-character
+                // floor applies only when the text *is* the whole input.
+                disabled={busy !== null || (!photoFile && description.trim().length < 2)}
                 className="h-11.5 rounded-md bg-ink text-item font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
               >
-                {busy === "text" ? "Reading…" : "Estimate portions"}
+                {busy === "photo"
+                  ? "Reading the plate…"
+                  : busy === "text"
+                    ? "Reading…"
+                    : photoFile
+                      ? "Estimate portions from photo"
+                      : "Estimate portions"}
               </button>
             </div>
 
@@ -381,7 +474,9 @@ export function AddFood() {
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) void handlePhoto(file);
+          // Stage only. Detection costs real money and takes seconds, so it
+          // waits for someone to ask for it.
+          if (file) stagePhoto(file);
           e.target.value = "";
         }}
       />

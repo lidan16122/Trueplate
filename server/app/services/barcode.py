@@ -206,6 +206,10 @@ def to_response(
         kind=DetectionMethod.BARCODE,
         source_label="Scanned · packaged product",
         meal_type=meal_type or MealType.SNACK,
+        # No model saw this, so there is nothing to enumerate — the barcode *is*
+        # the answer. The field is still filled because every path ends at one
+        # response type, and the confirm screen should not have to ask which.
+        meal_description=match.name,
         items=[
             ResolvedFoodItem(
                 detected=detected,

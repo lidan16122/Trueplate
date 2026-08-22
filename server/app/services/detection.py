@@ -18,6 +18,8 @@ Two things here are easy to get wrong and expensive to discover later:
 """
 
 import base64
+import hashlib
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -26,10 +28,12 @@ from typing import Any
 import anthropic
 from anthropic import AsyncAnthropic
 from fastapi.concurrency import run_in_threadpool
+from pydantic import ValidationError
 
 from app.config import settings
 from app.enums import DetectionMethod, MealType
 from app.schemas.detection import (
+    DetectedFood,
     FoodDetectionResponse,
     FoodDetectionResult,
     NutritionFacts,
@@ -141,24 +145,62 @@ Return one entry per distinct food. "Chicken with rice and broccoli" is three en
 small, a side, a garnish, a spread, a sauce or a drink, and never fold two foods into a \
 single entry — a missing item is a missing meal to the person logging it.
 
-Before you call the tool, count the distinct foods in the input and check `foods` has that \
-many entries. A dish named as a combination ("toast with X and Y") is still its components. \
-Silently reporting one of three is the most damaging mistake you can make here, because the \
-user sees a plausible answer and has no idea anything is missing.
+Fill the tool in the order its fields are listed: name every food you can see in \
+`components`, one short phrase each, then give `foods` exactly one entry per name. The \
+server compares the two lists and hands the reply straight back to you naming what is \
+missing, so a short list costs a whole extra round trip and gets caught anyway.
+
+`components` is not a summary you write afterwards. Write it first, from the image, and \
+then work down it.
+
+A dish named as a combination ("toast with X and Y") is still its components. Silently \
+reporting one of three is the most damaging mistake you can make here, because the user \
+sees a plausible answer and has no idea anything is missing.
 
 ## Search terms are a ladder
 
-`search_terms` goes most specific first, each rung broader than the last:
-["jasmine rice steamed", "white rice cooked", "rice"]. The server walks down it until a \
-database row matches, so the broad final rung is what keeps an unusual dish loggable. Always \
-include one.
+`search_terms` is how a food gets looked up, and it is **not** a description of the plate. \
+The database indexes foods, not meals. Name the food and how it was cooked; leave out the \
+dish it was part of, the sauce it was sitting in, and filler like "only", "pieces" or \
+"slices".
 
-## Decompose dishes that will not resolve as a unit
+- "chicken drumstick curry meat only" → "chicken drumstick cooked"
+- "potato cooked in curry" → "potato boiled"
+- "onion masala gravy" → "curry sauce"
 
-A homemade or regional dish is a sum of ingredients: return one entry per component. \
-"Mum's lasagna" becomes pasta, beef, ricotta, tomato and cheese, each with its own grams. A \
-dish a food database plausibly holds as a single row — "margherita pizza", "caesar salad" — \
-stays whole.
+Go most specific first, each rung broader than the last: \
+["basmati rice steamed", "white rice cooked", "rice"]. The server walks down until a \
+database row matches.
+
+The last rung must be a plain generic food a database certainly holds — one or two ordinary \
+words, no brand, no cuisine, no cooking method. It is the only thing standing between an \
+unusual component and no nutrition at all: an item that matches nothing is shown to the user \
+and then dropped from the meal, so its calories vanish quietly. Always include one.
+
+None of this costs you any detail: `label` is where the food's real description belongs — \
+"pulled chicken in masala" — and `label` is what the user actually reads. Only the lookup \
+terms need to be plain.
+
+## One entry per component you can see
+
+A plate is a list of parts, not a dish name. Return one entry for everything you can see and \
+point at, each with its own grams: the rice, each piece of meat, each vegetable, the sauce. \
+"Chicken curry with rice" is not one entry and it is not two — it is the rice, the chicken, \
+whatever vegetables are in it, and the gravy, separately. "Mum's lasagna" is pasta, beef, \
+ricotta, tomato and cheese.
+
+**The same food in two forms is two entries.** A bone-in leg and the pulled pieces beside it \
+are separately visible and separately weighable, so they are separate lines — as are roast \
+potatoes and mash on one plate.
+
+**A sauce, gravy, dressing or masala is a component, not a seasoning.** It carries most of \
+the oil in a dish and is usually the largest single source of error in the whole reading, so \
+give it its own entry and its own mass.
+
+One entry is right only when the food arrives as a single indivisible thing: an apple, a \
+canned drink, a packaged bar, a sandwich or burger whose parts you cannot see separately. Do \
+not ask yourself whether a nutrition database might hold the dish as one row — that is the \
+server's problem, and answering it here is what makes a whole meal come back as one line.
 
 ## Portions
 
@@ -189,6 +231,20 @@ preparation method. Never use it to look up calories or macros. Those come from 
 database, and a number read off a web page would be untraceable to any source — use what \
 you learn to write a better `label` and better `search_terms` instead.\
 """
+
+# Everything that determines the *shape* of an answer, in sixteen characters:
+# the instructions and the schema they are filled into. `detection_cache` folds
+# this into its keys so that editing either one retires the readings it would
+# otherwise keep serving for `detections_ttl_days`.
+#
+# Without it a prompt change is invisible on exactly the photos that matter —
+# the ones already submitted, which is every photo anyone complained about.
+# The tool schema is included because field *order* is load-bearing here (see
+# `FoodDetectionResult`), and a reorder changes the answer while leaving the
+# prompt byte-identical.
+PROMPT_FINGERPRINT = hashlib.sha256(
+    (SYSTEM_PROMPT + json.dumps(anthropic_tool_schema(), sort_keys=True)).encode("utf-8")
+).hexdigest()[:16]
 
 
 def _zoom_tool() -> dict[str, Any]:
@@ -285,7 +341,15 @@ class DetectionService:
                 }
             )
         else:
-            blocks.append({"type": "text", "text": "Identify this meal and estimate the portions."})
+            blocks.append(
+                {
+                    "type": "text",
+                    "text": (
+                        "Analyse each portion of food in this photo. Name every component "
+                        "you can see, then give the weight of each one."
+                    ),
+                }
+            )
 
         result = await self._run(blocks, image=image)
         return await self._resolve(
@@ -337,7 +401,11 @@ class DetectionService:
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": blocks}]
         spend = _Spend()
-        nudged = False
+        # One re-ask per *kind* of fault, not one per detection. `_self_contradiction`
+        # names three, so this self-caps at three re-asks — well inside `_MAX_TURNS`
+        # — and a clean detection still costs a single turn. A fault already raised
+        # is accepted as final: the model has had its say on that one.
+        raised: set[str] = set()
 
         for _ in range(_MAX_TURNS):
             try:
@@ -409,40 +477,63 @@ class DetectionService:
                 # One line per detection, at INFO. Output tokens dominate the
                 # bill at 5x the input rate, so the split matters more than the
                 # total when deciding whether to lower `effort`.
+                # `stop_reason` rides along because the expensive failure here
+                # is a *silent* one: a food list truncated by the output budget
+                # returns a perfectly valid result with items missing, and the
+                # only distinguishing evidence is `max_tokens` next to an output
+                # count sitting on the ceiling.
                 logger.info(
-                    "detection %s: %d turn(s), in=%d out=%d cache_read=%d cache_write=%d ~$%.4f",
+                    "detection %s: %d turn(s), stop=%s, in=%d out=%d/%d "
+                    "cache_read=%d cache_write=%d ~$%.4f",
                     "photo" if image is not None else "text",
                     spend.turns,
+                    response.stop_reason,
                     spend.input,
                     spend.output,
+                    settings.anthropic_max_tokens,
                     spend.cache_read,
                     spend.cache_write,
                     spend.usd,
                 )
-                result = FoodDetectionResult.model_validate(final.input)
+                try:
+                    result, dropped = self._parse_result(final.input)
+                except ValidationError as exc:
+                    # The envelope itself is unusable, not just one item. A 503
+                    # is the honest answer — the client already retries it,
+                    # where an escaping ValidationError is a 500 and reads to
+                    # the user as "this app is broken".
+                    logger.warning("Unparseable detection payload: %s", exc)
+                    raise DetectionUnavailable(
+                        "Detection came back in a shape we could not read. Try again."
+                    ) from exc
 
-                # Observed on the text path: the model classifies the input as
-                # `food`, writes `notes` describing the very items it saw, and
-                # still hands back an empty `foods` list. It contradicts itself,
-                # so ask once rather than reporting "nothing recognisable" over
-                # a meal the model just described.
-                #
-                # Only when it claims food. An empty list *with* `not_food` is
-                # the guardrail working exactly as designed.
-                if result.input_kind != "not_food" and not result.foods and not nudged:
-                    nudged = True
-                    logger.info("Model returned no foods but called it %r; asking again",
-                                result.input_kind)
+                # Ways the model contradicts itself, each worth one re-ask. Only
+                # when it claims food: an empty list *with* `not_food` is the
+                # guardrail working exactly as designed.
+                complaint = self._self_contradiction(result, dropped=dropped)
+                if complaint is not None and complaint[0] not in raised:
+                    kind, message = complaint
+                    raised.add(kind)
+                    logger.info("Re-asking (%s): %s", kind, message)
                     messages.append({"role": "assistant", "content": response.content})
+                    # The complaint travels as a `tool_result`, not as a plain
+                    # text turn. Every `tool_use` block must be answered by a
+                    # `tool_result` in the very next message or the API rejects
+                    # the whole request — so the text-message version of this
+                    # 400s instead of re-asking. It also reads correctly: the
+                    # recording tool rejected what it was given.
                     messages.append(
                         {
                             "role": "user",
-                            "content": (
-                                "You reported no foods, but classified this as "
-                                f"'{result.input_kind}'. List every distinct food in "
-                                "`foods`, one entry each. If it genuinely contains no "
-                                "food, set input_kind to 'not_food'."
-                            ),
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": block.id,
+                                    "content": message if block is final else "Superseded.",
+                                    **({"is_error": True} if block is final else {}),
+                                }
+                                for block in tool_calls
+                            ],
                         }
                     )
                     continue
@@ -466,6 +557,111 @@ class DetectionService:
             )
 
         raise DetectionUnavailable("Detection did not converge on a result.")
+
+    @staticmethod
+    def _self_contradiction(
+        result: FoodDetectionResult, *, dropped: int
+    ) -> tuple[str, str] | None:
+        """``(kind, message)`` when the reply does not hold together, else None.
+
+        Every case here is answerable by looking again at what was already
+        written, which is why re-asking works at all — there is nothing to look
+        up, only an inconsistency to notice.
+
+        The ``kind`` is what gives each fault its own attempt. Sharing one
+        allowance across all of them meant the first complaint spent it and any
+        *later, different* complaint went unasked: a miscount was queried, the
+        reply came back carrying a food with an unusable mass, and that food was
+        dropped in silence because there was no budget left to question it.
+        """
+        if result.input_kind == "not_food":
+            return None
+
+        if dropped:
+            # Ordered before the count check on purpose. A salvaged list is
+            # short because *we* removed something, so complaining that the
+            # count disagrees would be blaming the model for our own edit — and
+            # would send back a number it never wrote.
+            return (
+                "dropped",
+                f"{dropped} of your entries had an unusable `estimated_grams`; it must be "
+                "an edible mass in grams, greater than zero. Send the full list again "
+                "with a real mass on every entry.",
+            )
+
+        if not result.foods:
+            # Observed on the text path: it classifies the input as food, writes
+            # `notes` describing the very items it saw, and hands back nothing.
+            return (
+                "empty",
+                f"You reported no foods, but classified this as '{result.input_kind}'. "
+                "List every distinct food in `foods`, one entry each. If it genuinely "
+                "contains no food, set input_kind to 'not_food'.",
+            )
+
+        if len(result.components) != len(result.foods):
+            # Names the foods rather than counting them. The arithmetic version
+            # of this message — "you named 5 but returned 1" — made the model
+            # rebuild its own list from a digit, and it came back with two.
+            missing = [
+                name
+                for name in result.components
+                if not any(name.lower() in food.label.lower() for food in result.foods)
+            ]
+            named = ", ".join(result.components)
+            return (
+                "count",
+                f"You named {len(result.components)} component(s) — {named} — but `foods` "
+                f"holds {len(result.foods)} entry/entries"
+                + (f", missing: {', '.join(missing)}" if missing else "")
+                + ". Return one entry per name, each with its own grams.",
+            )
+
+        return None
+
+    @staticmethod
+    def _parse_result(payload: Any) -> tuple[FoodDetectionResult, int]:
+        """Parse the tool payload, dropping only the foods that do not stand up.
+
+        Returns the result and how many entries were dropped. The caller needs
+        that number: a salvaged list is a *short* list, and silently accepting
+        it is the missing-item failure this pipeline exists to avoid.
+
+        Strict tool use rejects numeric bounds, so ``estimated_grams`` reaches
+        the model as prose — "between 0 and 5000" in a description — rather than
+        as schema it must obey. It has been observed returning ``0``, which is
+        the one value the description rules out and the wire schema cannot.
+
+        Validating the payload as a unit turns that single bad field into a
+        ValidationError that loses the entire meal. This is the same trade the
+        resolver makes for an unmatched sauce: one unusable item is worth
+        dropping, and the four good ones beside it are not worth losing with it.
+        """
+        try:
+            return FoodDetectionResult.model_validate(payload), 0
+        except ValidationError:
+            if not isinstance(payload, dict):
+                raise
+
+        kept = []
+        dropped = 0
+        for entry in payload.get("foods") or []:
+            try:
+                DetectedFood.model_validate(entry)
+            except ValidationError:
+                dropped += 1
+                continue
+            kept.append(entry)
+
+        if dropped:
+            # Warned rather than logged at info: this is the model breaking a
+            # rule it was told in prose, and how often it happens decides
+            # whether the rule needs to move somewhere it can be enforced.
+            logger.warning("Dropped %d food(s) that failed validation", dropped)
+
+        # Anything still wrong is in the envelope — a missing meal_description,
+        # an unknown input_kind — and there is nothing to salvage from that.
+        return FoodDetectionResult.model_validate({**payload, "foods": kept}), dropped
 
     async def _zoom_results(self, zooms: list[Any], image: bytes) -> list[dict[str, Any]]:
         """Crop each requested region and hand the magnified views back.
@@ -542,9 +738,41 @@ class DetectionService:
             kind=kind,
             source_label=source_label,
             meal_type=meal_type or MealType.DINNER,
+            # The model's inventory, joined for display. The confirm screen wants
+            # a line, not an array, and this keeps the names it actually wrote
+            # rather than paraphrasing them.
+            meal_description=", ".join(result.components),
             items=items,
             totals=totals,
             image_hash=image_hash,
             cached=False,
+            is_provisional=self._looks_under_reported(result, kind),
             notes=result.notes,
+        )
+
+    @staticmethod
+    def _looks_under_reported(result: FoodDetectionResult, kind: DetectionMethod) -> bool:
+        """Whether this reading is too doubtful to freeze in the cache.
+
+        Two shapes, and the second is the one that costs a user their meal.
+
+        A list still shorter than the names it wrote, after every re-ask those
+        faults were owed, is the model telling us outright that it did not report
+        everything it saw.
+
+        A *photographed* meal returning exactly one food is the failure this
+        exists for: a five-component plate came back as 280 g of rice. There is
+        not always a signal inside the reply to catch that — only the prior that
+        a plate of food is rarely one thing.
+
+        Restricted to photos, and to `food`: a nutrition label or a menu
+        legitimately resolves to a single product, and the typed path is the
+        user telling us what they ate rather than us guessing.
+        """
+        if len(result.components) != len(result.foods):
+            return True
+        return (
+            kind == DetectionMethod.PHOTO
+            and result.input_kind == "food"
+            and len(result.foods) == 1
         )

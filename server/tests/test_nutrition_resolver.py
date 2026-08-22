@@ -16,7 +16,7 @@ from app.config import settings
 from app.db.models.food import Food
 from app.schemas.detection import DetectedFood
 from app.services.nutrition import NutritionResolver, OpenFoodFactsClient, UsdaClient
-from app.services.nutrition.open_food_facts import _is_relevant
+from app.services.nutrition.relevance import is_relevant
 from tests.fakes import nutrition_transport, usda_food
 
 
@@ -99,6 +99,60 @@ async def test_an_open_food_facts_match_is_never_written_back(db_session: AsyncS
     assert item.confidence_label == "Rough guess"
     # ...and never frozen into the shared table.
     assert await db_session.scalar(select(func.count()).select_from(Food)) == 0
+
+
+async def test_a_broad_usda_match_beats_a_specific_open_food_facts_one(
+    db_session: AsyncSession,
+) -> None:
+    """Measured against the live APIs: "basmati rice steamed" resolved to a
+    packaged microwave rice at 70 kcal/100 g, because OFF answered the first
+    rung and the loop returned before "white rice cooked" could reach USDA.
+    Decomposing a meal into components makes this worse, since every extra
+    component arrives with its own narrow first term."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params.get("query") or request.url.params.get("search_terms") or ""
+        if "foods/search" in request.url.path:
+            # USDA knows the generic food and not the specific phrasing, which
+            # is the ordinary case for anything a person actually cooked.
+            if query == "white rice cooked":
+                return httpx.Response(200, json=usda_food("Rice, white, cooked", 130.0))
+            return httpx.Response(200, json={"foods": []})
+        if "search.pl" in request.url.path:
+            return httpx.Response(200, json=_off_products("Steamed Basmati Rice", 70.0))
+        return httpx.Response(404, json={})
+
+    resolver = _resolver(db_session, httpx.MockTransport(handler))
+
+    item = await resolver.resolve(
+        _detected("cooked basmati rice", ["basmati rice steamed", "white rice cooked", "rice"])
+    )
+
+    assert item.matched is not None
+    assert item.matched.source == "usda_fdc"
+    assert item.matched.kcal_per_100g == 130.0
+    # Still approximate — it is the second rung — but sourced from a whole-food
+    # database rather than whatever the branded corpus ranked highest.
+    assert item.is_rough is True
+
+
+async def test_open_food_facts_still_answers_when_no_term_resolves(
+    db_session: AsyncSession,
+) -> None:
+    """The other half of the reorder: demoting OFF to a second pass must not
+    demote it out of existence. A branded near-miss beats no nutrition at all."""
+    transport = nutrition_transport(
+        usda={"foods": []}, off_search=_off_products("Curry Sauce", 90.0)
+    )
+    resolver = _resolver(db_session, transport)
+
+    item = await resolver.resolve(
+        _detected("onion masala gravy", ["onion masala gravy", "curry sauce", "sauce"])
+    )
+
+    assert item.matched is not None
+    assert item.matched.kcal_per_100g == 90.0
+    assert item.is_rough is True
 
 
 async def test_a_broader_term_resolves_but_is_flagged_as_approximate(
@@ -210,7 +264,7 @@ async def test_seeded_rows_never_expire(db_session: AsyncSession) -> None:
 def test_open_food_facts_answers_about_a_different_food_are_rejected(
     term: str, name: str, relevant: bool
 ) -> None:
-    assert _is_relevant(term, name) is relevant
+    assert is_relevant(term, name) is relevant
 
 
 async def test_a_lost_write_back_race_does_not_discard_earlier_work(

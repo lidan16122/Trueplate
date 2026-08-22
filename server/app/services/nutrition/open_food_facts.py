@@ -9,7 +9,6 @@ blocked, so ``settings.open_food_facts_user_agent`` is sent on every request.
 """
 
 import logging
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +17,7 @@ import httpx
 from app.config import settings
 from app.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
+from app.services.nutrition.relevance import is_relevant
 
 logger = logging.getLogger(__name__)
 
@@ -29,61 +29,6 @@ _PRODUCT_FIELDS = (
     "code,product_name,product_name_en,generic_name,brands,quantity,"
     "serving_size,serving_quantity,nutriments,categories_tags"
 )
-
-
-_TOKENS = re.compile(r"[a-z0-9]+")
-
-# Words that describe preparation rather than identity. They are common in our
-# search terms and rare in product names, so counting them as evidence of a
-# match would let almost anything through.
-_STOPWORDS = frozenset(
-    {
-        "and",
-        "the",
-        "with",
-        "for",
-        "raw",
-        "cooked",
-        "fresh",
-        "plain",
-        "whole",
-        "large",
-        "medium",
-        "small",
-    }
-)
-
-
-def _content_tokens(text: str) -> set[str]:
-    tokens = set()
-    for token in _TOKENS.findall(text.lower()):
-        if len(token) < 3 or token in _STOPWORDS:
-            continue
-        tokens.add(token)
-        # Crude singular, so "eggs" matches a product named "Egg".
-        if len(token) > 3 and token.endswith("s"):
-            tokens.add(token[:-1])
-    return tokens
-
-
-def _is_relevant(term: str, name: str) -> bool:
-    """Does this product plausibly answer the query at all?
-
-    Open Food Facts ranks free-text search by loose relevance over a corpus of
-    branded products, so a query it has no good answer for still returns
-    something confident-looking: "scrambled eggs" comes back as a mayonnaise,
-    "whole milk" as an unrelated cheese. Those are worse than no match, because
-    a wrong number the user cannot see is wrong is the one failure this app
-    exists to avoid.
-
-    One shared content word is a deliberately low bar. It is not trying to rank
-    quality — the resolver already treats every OFF search hit as rough — only
-    to reject answers that are about a different food entirely.
-    """
-    query_tokens = _content_tokens(term)
-    if not query_tokens:
-        return True
-    return bool(query_tokens & _content_tokens(name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +170,6 @@ class OpenFoodFactsClient:
         matches = [
             m
             for m in (_to_match(p) for p in products if isinstance(p, dict))
-            if m is not None and _is_relevant(term, m.name)
+            if m is not None and is_relevant(term, m.name)
         ]
         return matches[:limit]

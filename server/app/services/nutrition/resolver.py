@@ -1,12 +1,19 @@
 """The resolution ladder: turn a detected food into a sourced nutrition row.
 
 ```
-foods (cached)  ->  barcode_products  ->  USDA FDC  ->  Open Food Facts  ->  unresolved
+every term:  foods (cached)  ->  barcode_products  ->  USDA FDC
+then:        every term again, against Open Food Facts
+then:        unresolved
 ```
 
-walked once per search term, most specific first. The model supplies
-``["jasmine rice steamed", "white rice cooked", "rice"]``; the server walks down
-until something hits.
+The model supplies ``["jasmine rice steamed", "white rice cooked", "rice"]``,
+most specific first, and the server walks down until something hits.
+
+**Open Food Facts is a second pass, not a fourth rung**, and that ordering is
+load-bearing. It answers nearly any free-text query with a branded near-miss, so
+consulted per rung it beats the broader term a whole-food source would have
+answered properly — the specific query wins purely for being asked first. Every
+term therefore gets the trustworthy sources before any term gets OFF.
 
 The load-bearing idea is that **most foods do not need an exact match**. The
 naming space of food is enormous and the nutritional space is small, so
@@ -134,43 +141,28 @@ class NutritionResolver:
             # the label is always a usable query.
             terms = [detected.label]
 
+        # Two passes over the same ladder, and the order *between* them is the
+        # point. Open Food Facts is a barcode database searched by name: it
+        # answers nearly anything, usually with a branded near-miss. Asked once
+        # per rung it wins on the model's most *specific* term — "basmati rice
+        # steamed" resolving to a packaged microwave rice at 70 kcal/100 g —
+        # and the broader rung a whole-food source would have answered properly
+        # is never reached, because the loop has already returned.
+        #
+        # So every rung gets the whole-food sources before any rung gets OFF. A
+        # weak branded guess can then only ever lose to a real match, never
+        # outrank one for being more literally worded. This matters more the
+        # more finely a meal is decomposed, since each extra component arrives
+        # with its own narrow first term.
         for index, term in enumerate(terms):
-            hit = await self._resolve_term(term)
-            if hit is None:
-                continue
-            match = hit.match
+            hit = await self._resolve_precise(term)
+            if hit is not None:
+                return await self._resolved(detected, hit, term, fell_back=index > 0)
 
-            # Anything below the first term is an approximation by construction:
-            # the model's most specific description did not resolve, so what we
-            # found is broader than what the user ate.
-            fell_back = index > 0
-            # What the *user* is shown. SURE_THRESHOLD is the display split, and
-            # lives in schemas/log.py so the confirm screen and the day view
-            # collapse a confidence float to the same two words.
-            is_rough = fell_back or not hit.precise or detected.confidence < SURE_THRESHOLD
-
-            # What enters the *shared table* — a separate decision with a
-            # separate floor, because the two answer different questions. "Is
-            # this worth warning one user about" is not "is this worth serving
-            # to every future user", and the second deserves its own dial.
-            trustworthy = (
-                hit.precise
-                and not fell_back
-                and detected.confidence >= settings.foods_writeback_min_confidence
-            )
-            if trustworthy:
-                # A wrong row written back is served to every future lookup and
-                # nobody ever sees it happen.
-                match = await self._write_back(term, match)
-
-            return ResolvedFoodItem(
-                detected=detected,
-                matched=match,
-                nutrition=NutritionFacts.for_portion(match, detected.estimated_grams),
-                alternatives=hit.alternatives,
-                confidence_label="Rough guess" if is_rough else "Fairly sure",
-                is_rough=is_rough,
-            )
+        for index, term in enumerate(terms):
+            hit = await self._resolve_fallback(term)
+            if hit is not None:
+                return await self._resolved(detected, hit, term, fell_back=index > 0)
 
         # Every rung missed. The item is still returned so the user can log it and
         # correct it by hand — losing the whole meal because one sauce was
@@ -185,8 +177,8 @@ class NutritionResolver:
             is_rough=True,
         )
 
-    async def _resolve_term(self, term: str) -> _Hit | None:
-        """One rung of the ladder for one term: cache, then USDA, then OFF.
+    async def _resolve_precise(self, term: str) -> _Hit | None:
+        """The whole-food rungs for one term: our table, a scanned product, USDA.
 
         The ``precise`` flag on the result is what decides whether a match may be
         written back, and it is a property of the *rung*, not of the model's
@@ -204,7 +196,9 @@ class NutritionResolver:
             # Something previously scanned by name. The row got there through an
             # exact UPC, so the figures are as good as a barcode's — but the
             # *name* match that found it here is not, so this is not `precise`
-            # and never earns a write-back into `foods`.
+            # and never earns a write-back into `foods`. It stays in this pass
+            # regardless: a locally scanned product is a far better answer than
+            # a free-text search of every packaged good on earth.
             return _Hit(scanned, [], precise=False)
 
         usda_matches = await self._usda.search(term)
@@ -213,17 +207,61 @@ class NutritionResolver:
             # top hit here is real evidence about a generic food.
             return _Hit(usda_matches[0], usda_matches[1:], precise=True)
 
+        return None
+
+    async def _resolve_fallback(self, term: str) -> _Hit | None:
+        """Open Food Facts, reached only once every rung above has missed.
+
+        Excellent by barcode and weak by name: the corpus is branded packaged
+        goods, so "banana" can rank banana chips (360 kcal) above the fruit (89),
+        and nothing in the response says which you got. Useful as a last resort
+        before nothing at all, never trustworthy enough to freeze into the shared
+        table — so these always surface as "Rough guess" with alternatives to
+        swap to.
+        """
         off_matches = await self._off.search(term)
         if off_matches:
-            # Open Food Facts is excellent by barcode and weak by name: the
-            # corpus is branded packaged goods, so "banana" can rank banana
-            # chips (360 kcal) above the fruit (89), and nothing in the response
-            # says which you got. Useful as a last resort before nothing at all,
-            # never trustworthy enough to freeze into the shared table — so
-            # these always surface as "Rough guess" with alternatives to swap to.
             return _Hit(off_matches[0], off_matches[1:], precise=False)
-
         return None
+
+    async def _resolved(
+        self, detected: DetectedFood, hit: _Hit, term: str, *, fell_back: bool
+    ) -> ResolvedFoodItem:
+        """Turn a hit into the row the confirm screen shows, writing back if earned.
+
+        ``fell_back`` says the model's most specific description did not resolve,
+        so what we found is broader than what the user actually ate — an
+        approximation by construction, whichever source supplied it.
+        """
+        match = hit.match
+
+        # What the *user* is shown. SURE_THRESHOLD is the display split, and
+        # lives in schemas/log.py so the confirm screen and the day view
+        # collapse a confidence float to the same two words.
+        is_rough = fell_back or not hit.precise or detected.confidence < SURE_THRESHOLD
+
+        # What enters the *shared table* — a separate decision with a separate
+        # floor, because the two answer different questions. "Is this worth
+        # warning one user about" is not "is this worth serving to every future
+        # user", and the second deserves its own dial.
+        trustworthy = (
+            hit.precise
+            and not fell_back
+            and detected.confidence >= settings.foods_writeback_min_confidence
+        )
+        if trustworthy:
+            # A wrong row written back is served to every future lookup and
+            # nobody ever sees it happen.
+            match = await self._write_back(term, match)
+
+        return ResolvedFoodItem(
+            detected=detected,
+            matched=match,
+            nutrition=NutritionFacts.for_portion(match, detected.estimated_grams),
+            alternatives=hit.alternatives,
+            confidence_label="Rough guess" if is_rough else "Fairly sure",
+            is_rough=is_rough,
+        )
 
     # ------------------------------------------------------------------
     # The foods table

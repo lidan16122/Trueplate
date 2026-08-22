@@ -123,7 +123,15 @@ async def detect_from_photo(
     except (DetectionError, barcode_service.BarcodeError) as exc:
         raise _translate(exc) from exc
 
-    await detection_cache.write(db, cache_key, DetectionMethod.PHOTO, response)
+    if not response.is_provisional:
+        # A reading we already doubt is not worth keeping for
+        # `detections_ttl_days`. Cached, it would answer this photo the same way
+        # every time — so a user who can see the meal was under-read has no way
+        # to ask again, and "try again" replays the failure. Paying for a second
+        # detection is the cheaper mistake.
+        await detection_cache.write(db, cache_key, DetectionMethod.PHOTO, response)
+    else:
+        logger.info("Not caching a provisional reading of %s", image_hash[:12])
     # One commit covers both the cache row and anything the resolver wrote back
     # to `foods` during this request.
     await db.commit()
@@ -157,7 +165,10 @@ async def detect_from_text(
     except (DetectionError, barcode_service.BarcodeError) as exc:
         raise _translate(exc) from exc
 
-    await detection_cache.write(db, cache_key, DetectionMethod.TEXT, response)
+    # Same rule as the photo path: a reading that disagreed with its own
+    # component count is not one to answer with for the next thirty days.
+    if not response.is_provisional:
+        await detection_cache.write(db, cache_key, DetectionMethod.TEXT, response)
     await db.commit()
     return response
 

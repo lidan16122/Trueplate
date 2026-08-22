@@ -56,7 +56,13 @@ function toDraft(item: ResolvedFoodItem, index: number): DraftItem {
   const quantity = detected.household_quantity;
   return {
     key: `${index}-${detected.label}`,
-    name: item.matched?.name ?? detected.label,
+    // The model's own wording, not the row it resolved to. A USDA name is
+    // written for a database ("Rice, white, long-grain, regular, cooked,
+    // enriched, with salt") and reads as noise on a plate of food; the match
+    // still shows, one line down, as provenance. This is also what makes
+    // `food_entries.name` the user's language, which `resolver.py` already
+    // documents as the intent while this line quietly overrode it.
+    name: detected.label,
     grams: Math.round(detected.estimated_grams),
     confirmed: !item.is_rough,
     matched: item.matched,
@@ -249,6 +255,16 @@ export function Confirm() {
   if (!proposal) return <Navigate to="/add" replace />;
 
   const sourceNote = `${proposal.source_label}. Trueplate estimated the portions — the calorie numbers come from the food database once the grams are right.`;
+
+  // The model's own inventory, above the list it produced from it. When a plate
+  // of five things comes back as one row, this line is the only thing on screen
+  // that says so — and "+ Add a missed item" is directly beneath it.
+  const inventory = proposal.meal_description.trim() && (
+    <p className="text-caption leading-relaxed text-subtle">
+      <span className="font-mono text-micro tracking-[0.08em] text-faint">SAW </span>
+      {proposal.meal_description}
+    </p>
+  );
   // JSX rather than a string so the count itself can be mono. Every number in
   // this app is, including the ones sitting inside a sentence — a figure that
   // reflows as it ticks over is the thing the rule exists to prevent.
@@ -303,28 +319,48 @@ export function Confirm() {
     </div>
   );
 
-  const confidence = (draft: DraftItem) => (
-    <div className="flex items-center gap-2">
-      <span
-        className={`h-1.5 w-1.5 flex-none rounded-full ${draft.confirmed ? "bg-accent" : "bg-warn"}`}
-      />
-      <span className={`text-label ${draft.confirmed ? "text-accent" : "text-warn"}`}>
-        {draft.matched === null
-          ? "No match — edit or remove"
-          : draft.confirmed
-            ? "Fairly sure"
-            : draft.serverLabel}
-      </span>
-      {draft.alternatives.length > 0 && (
-        <button
-          onClick={() => setOpenAlts(openAlts === draft.key ? null : draft.key)}
-          className="text-label text-faint underline-offset-2 transition-colors hover:text-ink hover:underline"
-        >
-          {openAlts === draft.key ? "close" : "not right?"}
-        </button>
-      )}
-    </div>
-  );
+  const confidence = (draft: DraftItem) => {
+    const match = draft.matched;
+    // The row the numbers were read from, shown under the name the user
+    // recognises. Suppressed when the two say the same thing — this line exists
+    // to name a source, not to print the same words twice.
+    let source: string | null = null;
+    if (match && match.name.trim().toLowerCase() !== draft.name.trim().toLowerCase()) {
+      source = match.brand ? `${match.brand} · ${match.name}` : match.name;
+    }
+
+    return (
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex items-center gap-2">
+          <span
+            className={`h-1.5 w-1.5 flex-none rounded-full ${draft.confirmed ? "bg-accent" : "bg-warn"}`}
+          />
+          <span className={`text-label ${draft.confirmed ? "text-accent" : "text-warn"}`}>
+            {draft.matched === null
+              ? "No match — edit or remove"
+              : draft.confirmed
+                ? "Fairly sure"
+                : draft.serverLabel}
+          </span>
+          {draft.alternatives.length > 0 && (
+            <button
+              onClick={() => setOpenAlts(openAlts === draft.key ? null : draft.key)}
+              className="text-label text-faint underline-offset-2 transition-colors hover:text-ink hover:underline"
+            >
+              {openAlts === draft.key ? "close" : "not right?"}
+            </button>
+          )}
+        </div>
+        {source && (
+          // Truncated rather than wrapped: a USDA name runs to eight commas and
+          // would push the grams input off a phone screen.
+          <span className="truncate text-label text-faint" title={source}>
+            {source}
+          </span>
+        )}
+      </div>
+    );
+  };
 
   const alternatives = (draft: DraftItem) =>
     openAlts === draft.key && (
@@ -360,7 +396,7 @@ export function Confirm() {
   const householdInput = (draft: DraftItem, value: number | null) =>
     value !== null &&
     draft.unit && (
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-none items-center gap-1.5">
         <input
           inputMode="decimal"
           value={Number(value.toFixed(2))}
@@ -436,6 +472,7 @@ export function Confirm() {
         <main className="flex flex-1 flex-col gap-4.5 overflow-auto px-5 pt-4 pb-[150px]">
           <div className="h-[150px] flex-none">{photoPanel}</div>
           <p className="text-caption leading-relaxed text-subtle">{sourceNote}</p>
+          {inventory}
 
           <div className="flex flex-col gap-2">
             {rows.map(({ draft, calories, protein, carbs, fat, household }) => (
@@ -525,6 +562,7 @@ export function Confirm() {
           <div className="flex w-[480px] flex-none flex-col gap-4 p-8">
             <div className="min-h-0 flex-1">{photoPanel}</div>
             <p className="flex-none text-caption leading-relaxed text-subtle">{sourceNote}</p>
+            <div className="flex-none">{inventory}</div>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col border-l border-line-2">

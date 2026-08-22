@@ -217,9 +217,13 @@ export interface FoodDetectionResponse {
   kind: DetectionMethod;
   source_label: string;
   meal_type: MealType;
+  /** What the model said it saw, in its own words, before it listed anything. */
+  meal_description: string;
   items: ResolvedFoodItem[];
   totals: NutritionFacts;
   image_hash: string | null;
   cached: boolean;
+  /** The server doubts this reading and did not cache it, so resubmitting retries. */
+  is_provisional: boolean;
   notes: string | null;
 }

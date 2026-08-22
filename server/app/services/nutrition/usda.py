@@ -21,6 +21,7 @@ import httpx
 from app.config import settings
 from app.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
+from app.services.nutrition.relevance import SUBSTITUTE_MARKERS, content_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -35,11 +36,20 @@ _FAT = 1004
 
 _KJ_PER_KCAL = 4.184
 
-# FDC's front end answers valid requests with a spurious 400 roughly half the
-# time. Three attempts takes the chance of losing a lookup from ~50% to ~12%.
-# 429 is excluded on purpose — that one means what it says.
+# Even with a well-formed request FDC's edge fails perhaps one time in six, and
+# it fails in two shapes: a 400 with an nginx error page, and a 404 serving the
+# FoodData Central *website* — an Angular shell — in place of an API response.
+# Both look like a permanent verdict on the request and are nothing of the kind.
+#
+# 404 belongs in this set for that reason. Absent from it, the first 404 exited
+# the loop immediately and the retries never ran. 429 stays excluded on purpose:
+# that one is real, per-IP, and hammering it extends the block.
 _ATTEMPTS = 3
-_RETRY_STATUSES = frozenset({400, 500, 502, 503, 504})
+_RETRY_STATUSES = frozenset({400, 404, 500, 502, 503, 504})
+
+# Fetched per search, before client-side ranking trims to the caller's limit.
+# See ``UsdaClient._get`` for why the data-type filter is not sent upstream.
+_FETCH_SIZE = 25
 _RETRY_BACKOFF_SECONDS = 0.25
 
 # Foundation and SR Legacy are lab-analysed whole foods; Survey is modelled from
@@ -52,6 +62,101 @@ _DATA_TYPE_RANK = {
     "Survey (FNDDS)": 2,
     "Branded": 3,
 }
+
+
+def _head(description: str) -> str:
+    """The segment of an FDC description that names the food.
+
+    FDC writes descriptions head-first — "Chicken, broilers or fryers, leg, meat
+    and skin, cooked, roasted" — so everything before the first comma is the
+    food's identity and the rest are qualifiers. That convention is the single
+    most useful signal available here, because the worst matches announce
+    themselves in exactly that position: *Spices*, curry powder. *Bratwurst*,
+    chicken, cooked. *Emu*, fan fillet. *Bread*, potato.
+    """
+    return description.split(",", 1)[0]
+
+
+def rank_foods(term: str, foods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Order raw FDC results by how well they answer ``term``, best first.
+
+    Pure, and public so ``scripts/eval_matching`` can score it against recorded
+    responses without touching the network. That separation is what makes this
+    tunable at all: FDC fails roughly one request in six, so an eval that
+    re-fetched would be measuring their edge rather than this function.
+
+    Rows sharing no content word with the query are **dropped rather than
+    demoted**, so an answer about a different food entirely cannot be returned
+    just because nothing better came back. The resolver's ladder has two more
+    terms below this one, which is a far better place to end up than a confident
+    stranger.
+    """
+    query = content_tokens(term)
+    scored: list[tuple[tuple[int, ...], dict[str, Any]]] = []
+
+    for index, food in enumerate(foods):
+        description = food.get("description") or ""
+        body = content_tokens(description)
+        if query and not (query & body):
+            continue
+        head = content_tokens(_head(description))
+
+        scored.append(
+            (
+                (
+                    # Is the head about this food at all? "Spices", "Soup",
+                    # "Bread" and "Emu" are not, whatever their qualifiers say.
+                    0 if head & query else 1,
+                    # A stand-in for the food is not the food. Only when the
+                    # query did not ask for one, so "meatless chicken" still
+                    # finds what it means.
+                    1 if (body & SUBSTITUTE_MARKERS) and not (query & SUBSTITUTE_MARKERS) else 0,
+                    # How much of the *query* the row accounts for, anywhere in
+                    # the description. This is the relevance measure, and it has
+                    # to lead: "Sauce, cheese sauce mix" answers nothing of
+                    # "curry sauce" beyond the word sauce, while
+                    # "Yogurt, Greek, plain, nonfat" answers all of
+                    # "greek yogurt plain" with half of it in a qualifier.
+                    -len(body & query),
+                    # Identity words the query never mentioned. "Sweet potato
+                    # leaves" carries two against a query for potato; "Potatoes"
+                    # carries none. Without this a head that happens to contain
+                    # every query word wins however much else it contains, which
+                    # is how "Spanish rice with ground beef" beat "Beef, ground".
+                    len(head - query),
+                    # Branded rows are manufacturer-submitted and the least
+                    # consistent, and their descriptions are the query typed
+                    # back verbatim — so on relevance alone a packaged product
+                    # wins every plain food name. Demoted once identity and
+                    # coverage are equal, which is exactly "a branded row may
+                    # win, but only when it is clearly the better match".
+                    1 if food.get("dataType") == "Branded" else 0,
+                    # How much of the head the query explains. Below the branded
+                    # penalty on purpose — above it, "GREEK YOGURT PLAIN" beats
+                    # "Yogurt, Greek, plain, nonfat" for repeating the query in
+                    # the identity position. Below it, this is what separates
+                    # "Chicken drumstick, rotisserie" from "Chicken, skin
+                    # (drumsticks and thighs)": both mention a drumstick, only
+                    # one *is* one, and they differ by 240 kcal.
+                    -len(head & query),
+                    # Everything else the row drags along. Separates "Bananas,
+                    # raw" from "Bananas, overripe, raw".
+                    len(body - query),
+                    # Lab-analysed over modelled, among rows that are otherwise
+                    # indistinguishable.
+                    _DATA_TYPE_RANK.get(food.get("dataType", ""), 99),
+                    # FDC's own relevance, last. It is better than it looks: for
+                    # "chicken leg roasted with skin" its first result is already
+                    # exactly right, so ties should fall back to it rather than
+                    # to anything invented here.
+                    index,
+                ),
+                food,
+            )
+        )
+
+    scored.sort(key=lambda pair: pair[0])
+    return [food for _, food in scored]
 
 
 def _nutrient_values(payload: dict[str, Any]) -> dict[int, float]:
@@ -152,7 +257,7 @@ class UsdaClient:
         """
         return " ".join(term.replace(",", " ").split())
 
-    async def _retrying_get(self, term: str, limit: int) -> httpx.Response:
+    async def _retrying_get(self, term: str) -> httpx.Response:
         """Fetch, retrying the statuses FDC returns for no reason.
 
         Their front end intermittently answers a perfectly valid request with a
@@ -168,29 +273,40 @@ class UsdaClient:
         """
         last: httpx.Response | None = None
         for attempt in range(_ATTEMPTS):
-            last = await self._get(term, limit)
+            last = await self._get(term)
             if last.status_code not in _RETRY_STATUSES:
                 return last
             if attempt < _ATTEMPTS - 1:
                 await asyncio.sleep(_RETRY_BACKOFF_SECONDS * (attempt + 1))
         return last  # type: ignore[return-value]  # the loop always runs once
 
-    async def _get(self, term: str, limit: int) -> httpx.Response:
+    async def _get(self, term: str) -> httpx.Response:
+        """One search request.
+
+        **``dataType`` is deliberately not sent**, and that is a fix rather than
+        a simplification. FDC's edge rejects the value ``Survey (FNDDS)``
+        outright — measured at 0/6 successful requests carrying it, against 5/6
+        carrying no ``dataType`` at all — answering 400 or 404 with an nginx or
+        Angular error page rather than anything that names the problem. The
+        previous request sent all four types on every lookup, so the USDA rung
+        failed *every* time and each whole-food match this app made was quietly
+        coming from Open Food Facts instead. Nothing surfaced, because the
+        resolver degrades politely and the user just sees a worse answer.
+
+        Losing the server-side filter costs nothing: ``_DATA_TYPE_RANK`` already
+        sorts the useful types to the front and pushes anything unrecognised to
+        the back, so the ordering guarantee is unchanged — it now happens after
+        the response instead of before it.
+        """
         return await self._client.get(
             f"{settings.usda_fdc_base_url}/foods/search",
-            # A list of pairs, so `dataType` is sent as a repeated query
-            # parameter. Joining the values with commas instead — the shape
-            # FDC's own docs suggest — is rejected outright.
             params=[
                 ("api_key", settings.usda_fdc_api_key),
                 ("query", self._clean(term)),
-                ("pageSize", limit),
-                # Ask for the useful data types explicitly; the default
-                # includes experimental sets that pollute the ranking.
-                ("dataType", "Foundation"),
-                ("dataType", "SR Legacy"),
-                ("dataType", "Survey (FNDDS)"),
-                ("dataType", "Branded"),
+                # Over-fetch on purpose. Without a server-side filter a page can
+                # come back entirely Branded, and client-side ranking can only
+                # promote a lab-analysed row that is actually in the page.
+                ("pageSize", _FETCH_SIZE),
             ],
         )
 
@@ -202,7 +318,7 @@ class UsdaClient:
             return []
 
         try:
-            response = await self._retrying_get(term, limit)
+            response = await self._retrying_get(term)
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPStatusError as exc:
@@ -232,9 +348,6 @@ class UsdaClient:
         if not isinstance(foods, list):
             return []
 
-        ranked = sorted(
-            (f for f in foods if isinstance(f, dict)),
-            key=lambda f: _DATA_TYPE_RANK.get(f.get("dataType", ""), 99),
-        )
+        ranked = rank_foods(term, [f for f in foods if isinstance(f, dict)])
         matches = [m for m in (_to_match(f) for f in ranked) if m is not None]
         return matches[:limit]
