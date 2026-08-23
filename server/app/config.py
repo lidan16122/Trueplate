@@ -89,9 +89,79 @@ class Settings(BaseSettings):
     ai_detect_rate_limit: int = 20
     ai_detect_rate_window_seconds: int = 3600
 
-    # ---------- External services (not wired yet) ----------
+    # ---------- AI food detection ----------
+    # No default, and absent from .env.example as a real value: a missing key
+    # surfaces as a clean 503 from the detect routes rather than an opaque 401
+    # from the SDK.
     anthropic_api_key: str = ""
+    anthropic_model: str = "claude-opus-5"
+
+    # Caps thinking *and* response text together on Opus 5, where thinking is on
+    # by default. Sized with headroom: too tight and a reply truncates mid-tool-call.
+    anthropic_max_tokens: int = 8000
+    # The main cost lever per photo. `low` and `medium` are unusually strong on
+    # this model, so `low` is worth trying before any prompt work — raising
+    # effort is cheaper to try than re-engineering the prompt, and cheaper to
+    # undo. `medium` is the starting point because it is the setting the
+    # pipeline was actually measured at, not because low was ruled out.
+    anthropic_effort: str = "medium"
+    # Vision plus a tool loop is slow; the SDK's 10-minute default is far longer
+    # than we ever want to hold a request open.
+    anthropic_timeout_seconds: float = 120.0
+
+    detect_image_max_bytes: int = 8 * 1024 * 1024
+    # Opus 5 accepts up to 2576 px on the long edge, but a full-resolution image
+    # costs roughly 3x the tokens of one this size. Downsampling is the single
+    # biggest lever on per-photo cost, so it starts conservative — raise it only
+    # against a measured portion-accuracy gain, not on principle.
+    detect_image_max_edge_px: int = 1568
+
+    # Web search identifies *what a food is*; it never sources a number. Scoped
+    # to known-provenance references so an SEO recipe blog can never influence a
+    # match. See services/nutrition/resolver.py for why the numbers still come
+    # from the database either way.
+    web_search_max_uses: int = 3
+    web_search_allowed_domains: Annotated[list[str], NoDecode] = [
+        "fdc.nal.usda.gov",
+        "world.openfoodfacts.org",
+        "en.wikipedia.org",
+    ]
+
+    # ---------- Nutrition sources ----------
     usda_fdc_api_key: str = ""
+    usda_fdc_base_url: str = "https://api.nal.usda.gov/fdc/v1"
+    open_food_facts_base_url: str = "https://world.openfoodfacts.org"
+    # Open Food Facts publishes no hard rate limit but asks clients to identify
+    # themselves. An anonymous scraper is what gets blocked.
+    open_food_facts_user_agent: str = "Trueplate/0.1 (https://github.com/lidan16122/Trueplate)"
+    nutrition_timeout_seconds: float = 10.0
+
+    # A wrong row written back is served to every future lookup, so a rough
+    # third-rung match is left to re-resolve next time rather than frozen.
+    #
+    # Deliberately equal to SURE_THRESHOLD rather than derived from it: the two
+    # answer different questions — that one is "warn this user", this one is
+    # "serve every future user" — and they should be free to move apart. Lower
+    # it to cache more aggressively, raise it if a bad row ever reaches `foods`.
+    foods_writeback_min_confidence: float = 0.75
+    # Upstream revises figures. Past this age a row is re-fetched on read
+    # instead of being trusted indefinitely.
+    foods_ttl_days: int = 30
+
+    # Cached detections expire too. Without this a photo answered once is
+    # answered the same way forever, so an improvement to the prompt or a model
+    # upgrade would never reach anyone who had already logged that meal.
+    detections_ttl_days: int = 30
+
+    @field_validator("web_search_allowed_domains", mode="before")
+    @classmethod
+    def _split_domains(cls, v: object) -> object:
+        if isinstance(v, str):
+            stripped = v.strip()
+            if stripped.startswith("["):
+                return v
+            return [d.strip() for d in stripped.split(",") if d.strip()]
+        return v
 
     @field_validator("cors_origins", mode="before")
     @classmethod

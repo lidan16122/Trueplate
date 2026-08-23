@@ -7,7 +7,17 @@ from fakeredis import aioredis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.base import Base
-from app.db.models import AuthIdentity, Goal, User, UserProfile
+from app.db.models import (
+    AuthIdentity,
+    BarcodeProduct,
+    DailyLog,
+    Detection,
+    Food,
+    FoodEntry,
+    Goal,
+    User,
+    UserProfile,
+)
 from app.db.session import get_db
 from app.main import app as fastapi_app
 from app.stores.client import get_redis
@@ -36,24 +46,31 @@ def store(redis: aioredis.FakeRedis) -> RefreshTokenStore:
 
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession]:
-    """SQLite stand-in for the tables the auth flow touches.
+    """SQLite stand-in for every table the API touches.
 
-    ``foods`` and ``barcode_products`` are left out because their JSONB columns
-    have no SQLite equivalent; nothing in the auth path reads them. ``goals``
-    comes along so the post-sign-in onboarding check runs for real — its partial
-    index degrades to a plain unique index here, which is harmless given the
-    constraint it encodes is one active goal per user either way.
+    ``foods``, ``barcode_products`` and ``detections`` used to be left out
+    because JSONB has no SQLite equivalent. Their JSON columns now declare a
+    ``.with_variant(JSON(), "sqlite")``, so the whole schema builds here and the
+    detection path can be tested without a running Postgres.
+
+    ``goals`` partial index degrades to a plain unique index on SQLite, which is
+    harmless: the constraint it encodes is one active goal per user either way.
     """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    auth_tables = [
+    tables = [
         User.__table__,
         AuthIdentity.__table__,
         UserProfile.__table__,
         Goal.__table__,
+        Food.__table__,
+        BarcodeProduct.__table__,
+        Detection.__table__,
+        DailyLog.__table__,
+        FoodEntry.__table__,
     ]
 
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all, tables=auth_tables)
+        await conn.run_sync(Base.metadata.create_all, tables=tables)
 
     maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with maker() as session:

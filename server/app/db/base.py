@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import DateTime, Float, MetaData, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -22,6 +22,22 @@ class Base(DeclarativeBase):
 
 class UUIDPrimaryKeyMixin:
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+
+
+def as_utc(value: datetime) -> datetime:
+    """Force a timestamp read from the database into UTC-aware form.
+
+    Postgres hands back an aware datetime for ``DateTime(timezone=True)``;
+    SQLite, which the test suite runs on, hands back a naive one for the same
+    column. Comparing the two raises, so every read of one of these columns
+    normalises through here.
+
+    It lives beside the columns rather than beside any one caller: it was
+    written twice — once in the resolver, once in the detection cache — with
+    near-identical comments, which is what a shared concern looks like just
+    before it drifts.
+    """
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 class TimestampMixin:

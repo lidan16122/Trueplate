@@ -375,3 +375,36 @@ class TestServerErrorsDoNotLeakThroughSignIn:
         # read in the logs, not something to hand to an unauthenticated caller.
         assert "GOOGLE_CLIENT_ID" not in response.text
         assert "configured" not in response.text.lower()
+
+
+class TestGoogleClockSkew:
+    """`google-auth` defaults its skew allowance to zero.
+
+    A token whose `iat` was one second ahead of this machine's clock came back
+    as "Token used too early, 1787428240 < 1787428241" and the user simply could
+    not sign in. No two clocks agree to the second, so the default rejects valid
+    tokens on healthy deployments.
+    """
+
+    def test_verification_allows_for_a_clock_that_is_slightly_behind(self, monkeypatch):
+        # Substituting google-auth itself, not our wrapper: the whole point is
+        # which arguments cross that boundary.
+        seen: dict = {}
+
+        def fake_verify(credential, request, audience=None, **kwargs):
+            seen.update(kwargs)
+            return google_payload()
+
+        monkeypatch.setattr(google_oauth.id_token, "verify_oauth2_token", fake_verify)
+        monkeypatch.setattr(settings, "google_client_id", "test-client-id")
+
+        google_oauth._verify_sync("any-credential")
+
+        assert seen.get("clock_skew_in_seconds", 0) > 0, (
+            "a zero skew allowance rejects tokens minted a second in the future"
+        )
+
+    def test_the_allowance_stays_far_below_a_token_lifetime(self):
+        """It widens the expiry check too, so it must not become a real grace
+        period on an hour-long token."""
+        assert google_oauth.CLOCK_SKEW_SECONDS <= 60

@@ -20,6 +20,45 @@ from app.enums import DetectionMethod, MealType
 
 Preparation = Literal["raw", "grilled", "fried", "baked", "boiled", "steamed", "roasted", "unknown"]
 
+# What the submitted photo or sentence actually *is*. The guardrail against
+# non-food input lives here, in the schema, rather than as a "please refuse"
+# line in the system prompt: a refusal the model writes in prose is free text we
+# would have to parse, whereas a field the model must fill is a typed outcome
+# the server decides on.
+#
+# Three of the four are accepted. Users legitimately point a food app at a
+# nutrition label, a menu, or a recipe screenshot — none of those are food, and
+# a strict food-image classifier that rejects all three makes the feature feel
+# broken. They resolve the same way everything else does: read the product or
+# dish name, then look the nutrition up. Only ``not_food`` is refused.
+InputKind = Literal["food", "nutrition_label", "menu_or_recipe", "not_food"]
+
+# A closed set rather than a free string, and that is a correctness fix rather
+# than tidiness: as free text this field attracted the model's justification for
+# its own arithmetic — a paragraph of repeated half-sentences — which consumed
+# the output budget and left the remaining foods unreported. An enum cannot hold
+# a paragraph. `enum` is one of the few constraints strict tool use does accept,
+# so unlike the numeric bounds this one survives into the wire schema.
+HouseholdUnit = Literal[
+    "cup",
+    "tbsp",
+    "tsp",
+    "slice",
+    "piece",
+    "medium",
+    "small",
+    "large",
+    "bowl",
+    "plate",
+    "glass",
+    "can",
+    "bottle",
+    "scoop",
+    "handful",
+    "fillet",
+    "egg",
+]
+
 
 # --------------------------------------------------------------------------
 # What the model is allowed to return
@@ -38,20 +77,56 @@ class DetectedFood(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     label: str = Field(description="Everyday name of the food, e.g. 'grilled chicken breast'")
-    estimated_grams: float = Field(gt=0, le=5000, description="Estimated edible mass in grams")
+    # The bounds are enforced on the way back in, not advertised in the tool
+    # schema — strict tool use rejects numeric constraints. The range lives in
+    # the description so the model still knows what is plausible.
+    estimated_grams: float = Field(
+        gt=0, le=5000, description="Estimated edible mass in grams, between 0 and 5000"
+    )
     confidence: float = Field(
         ge=0, le=1, description="0-1 confidence in this identification and portion"
     )
     preparation: Preparation = Field(
         default="unknown", description="Cooking method, which changes the nutrition lookup"
     )
+    # No default, and that is load-bearing rather than tidiness — the same trap
+    # ``FoodDetectionResult`` documents for ``foods``, live on a second field.
+    # Pydantic emits a field as required only when it has no default, so
+    # ``default_factory=list`` silently kept this out of the schema's
+    # ``required`` array, and the model duly omitted it: a detected food arrived
+    # carrying no terms at all. That leaves the entire input to the resolution
+    # ladder as a bare label, which is the one thing the ladder cannot widen.
     search_terms: list[str] = Field(
-        default_factory=list,
-        description="Terms to query the nutrition database with, most specific first",
+        description="Terms to query the nutrition database with, most specific first"
     )
     portion_reasoning: str | None = Field(
         default=None,
-        description="What the estimate was based on, e.g. 'covers half a 26cm plate'",
+        description=(
+            "One short sentence on what the estimate was based on, e.g. "
+            "'covers half a 26cm plate'. Not a place to show your working."
+        ),
+    )
+
+    # Nobody can correct "158 g", but everyone can correct "1 cup". These carry a
+    # familiar handle for the same mass so the confirm screen has something a
+    # person can actually reason about.
+    #
+    # Grams stay authoritative and there is no density table anywhere: the ratio
+    # ``estimated_grams / household_quantity`` is the grams-per-unit for *this*
+    # food in *this* photo, so editing 1.5 cups to 2 rescales grams by the
+    # model's own anchor. That sidesteps "1 cup of rice != 1 cup of spinach"
+    # entirely — we never convert between units, only scale within one.
+    #
+    # Optional on purpose, and deliberately absent from ``required``: a smear of
+    # sauce is not "1" of anything, and forcing a unit invents one.
+    household_quantity: float | None = Field(
+        default=None,
+        gt=0,
+        description="How many household units, greater than 0 — e.g. 1.5 for '1.5 cups'",
+    )
+    household_unit: HouseholdUnit | None = Field(
+        default=None,
+        description="Familiar measure this food is naturally counted in. Omit if none fits.",
     )
 
 
@@ -61,13 +136,52 @@ class FoodDetectionResult(BaseModel):
     Note the absence of any nutrition field. This model is turned into the
     Anthropic tool ``input_schema`` via ``model_json_schema()``, so the schema is
     the enforcement mechanism, not a convention someone has to remember.
+
+    Every field below except ``notes`` is required, and that is load-bearing
+    rather than tidiness: strict tool use demands ``additionalProperties: false``
+    **and** a ``required`` array, and Pydantic only emits a field as required
+    when it has no default. Giving ``foods`` a ``default_factory`` — the obvious,
+    harmless-looking choice — silently drops ``required`` from the generated
+    schema and the API rejects the tool. Do not add defaults here.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    foods: list[DetectedFood] = Field(default_factory=list)
-    meal_description: str = Field(default="", description="One-line summary of the plate")
-    overall_confidence: float = Field(default=0.0, ge=0, le=1)
+    input_kind: InputKind = Field(
+        description=(
+            "What was submitted. Use 'food' for an actual meal or ingredient; "
+            "'nutrition_label' for a packaging label; 'menu_or_recipe' for a menu, "
+            "recipe or screenshot describing food; 'not_food' for anything else. "
+            "When this is 'not_food', return an empty foods list."
+        )
+    )
+    # Declared *before* ``foods``, and the ordering is the point rather than
+    # taste. Tool arguments are generated in schema order, so naming every
+    # component here first puts the inventory into the context the food list is
+    # then written against — the model reads back its own enumeration instead of
+    # recalling the image. Asked for afterwards it is a summary of a decision
+    # already made, which is how a five-component plate came back as two entries.
+    #
+    # A list of names, and it replaced a prose sentence plus an integer count.
+    # Both of those were observed failing together: the model wrote a faultless
+    # five-item description, wrote `component_count: 5`, returned one food, and
+    # when asked "you named 5 but returned 1" came back with two. A bare number
+    # makes the server's complaint arithmetic — the model has to reconstruct its
+    # own list from a digit. Names let the re-ask say *which* foods are missing,
+    # and make writing five of them and then one food a far starker thing to
+    # commit to than writing `1`.
+    components: list[str] = Field(
+        description=(
+            "Name every distinct food you can see, one short phrase each, before you "
+            "list anything: ['basmati rice', 'bone-in chicken drumstick', 'pulled "
+            "chicken pieces', 'potato slices in masala', 'onion masala gravy']. "
+            "`foods` must then hold exactly one entry per name here."
+        )
+    )
+    foods: list[DetectedFood]
+    overall_confidence: float = Field(
+        ge=0, le=1, description="0-1 confidence in the reading of the meal as a whole"
+    )
     notes: str | None = Field(
         default=None, description="Anything unidentifiable, e.g. 'sauce could not be identified'"
     )
@@ -92,6 +206,32 @@ class NutritionFacts(BaseModel):
     carbs_g: float
     fat_g: float
 
+    @classmethod
+    def for_portion(cls, match: NutritionMatch | None, grams: float) -> NutritionFacts:
+        """Scale a per-100 g match to an actual portion.
+
+        The one place this arithmetic lives on the response side. It was written
+        out three times — here, in the resolver, and in the barcode service —
+        which is two chances for a portion to be scaled one way on the photo
+        path and another on the barcode path.
+
+        ``NutritionPer100gMixin.scaled_to`` is the ORM-side twin: same maths,
+        but it reads an ORM row and returns a dataclass, so neither can consume
+        the other without dragging the database layer into the schemas.
+
+        A missing match scales to zeroes rather than raising: an unresolved
+        food is still shown, still editable, and simply contributes nothing.
+        """
+        if match is None:
+            return cls(calories=0.0, protein_g=0.0, carbs_g=0.0, fat_g=0.0)
+        factor = grams / 100.0
+        return cls(
+            calories=match.kcal_per_100g * factor,
+            protein_g=match.protein_g_per_100g * factor,
+            carbs_g=match.carbs_g_per_100g * factor,
+            fat_g=match.fat_g_per_100g * factor,
+        )
+
 
 class NutritionMatch(BaseModel):
     """A candidate row from the nutrition database."""
@@ -101,6 +241,12 @@ class NutritionMatch(BaseModel):
     brand: str | None = None
     source: str
     source_ref: str | None = None
+    # The label's own serving, when the source has one — "1 bar (40 g)". Only
+    # barcode products carry this; a `foods` row has no serving to speak of.
+    # Display-only, and the reason `food_entries.serving_description` can read
+    # "1 bar" instead of "40 g" for a scanned item, where there is no household
+    # unit for the model to have estimated.
+    serving_description: str | None = None
     kcal_per_100g: float
     protein_g_per_100g: float
     carbs_g_per_100g: float
@@ -128,16 +274,28 @@ class FoodDetectionResponse(BaseModel):
     # Human provenance line, e.g. "From your photo".
     source_label: str
     meal_type: MealType
+    # The model's own enumeration of what it saw, carried through to the confirm
+    # screen. It was being written on every detection and read by nobody — and a
+    # list of one row under "rice, a chicken leg, potato slices and gravy" is the
+    # difference between a miss the user can see and one they cannot.
+    #
+    # Required, with no default. That is load-bearing beyond tidiness: a payload
+    # cached before this field existed no longer validates, and
+    # `detection_cache.read` treats that as a miss and re-detects. Adding a
+    # default would leave every stale reading in place, silently.
+    meal_description: str
     items: list[ResolvedFoodItem]
     totals: NutritionFacts
     image_hash: str | None = None
     # True when this came from the AI cache rather than a fresh model call.
     cached: bool = False
+    # The reading is worth showing but not worth *keeping*: the model disagreed
+    # with its own component count, or a photographed meal came back as a single
+    # food. Caching one of these freezes a transient failure against the photo's
+    # hash for `detections_ttl_days`, which turns "try again" into a button that
+    # replays the same wrong answer. See `api/routes/ai.py`.
+    is_provisional: bool = False
     notes: str | None = None
-
-    @property
-    def rough_count(self) -> int:
-        return sum(1 for item in self.items if item.is_rough)
 
 
 class TextDetectionRequest(BaseModel):
@@ -145,20 +303,66 @@ class TextDetectionRequest(BaseModel):
     meal_type: MealType | None = None
 
 
+# Strict tool use accepts only a subset of JSON Schema. Numeric bounds and
+# string/array length constraints are rejected outright — the API answers
+# "For 'number' type, properties exclusiveMinimum, maximum are not supported"
+# and the whole request 400s.
+#
+# Pydantic emits these from `Field(gt=0, le=5000)` and friends, so they have to
+# come off on the way out. They are *not* removed from the models: the bounds
+# still run when `model_validate` parses what the model sent back. The schema
+# stops being the enforcement point and becomes advisory; validation moves to
+# where it can reject a bad value rather than merely discourage one.
+_UNSUPPORTED_SCHEMA_KEYS = frozenset(
+    {
+        "minimum",
+        "maximum",
+        "exclusiveMinimum",
+        "exclusiveMaximum",
+        "multipleOf",
+        "minLength",
+        "maxLength",
+        "minItems",
+        "maxItems",
+    }
+)
+
+
+def _strip_unsupported(node: object) -> object:
+    """Recursively drop constraint keywords strict tool use rejects."""
+    if isinstance(node, dict):
+        return {
+            key: _strip_unsupported(value)
+            for key, value in node.items()
+            if key not in _UNSUPPORTED_SCHEMA_KEYS
+        }
+    if isinstance(node, list):
+        return [_strip_unsupported(item) for item in node]
+    return node
+
+
 def anthropic_tool_schema() -> dict:
     """The tool definition to hand to the Claude API.
 
     Generated from the Pydantic model so the two can never drift. Paired with
     ``strict: true``, which requires ``additionalProperties: false`` — supplied
-    by the models' ``extra="forbid"``.
+    by the models' ``extra="forbid"`` — and a populated ``required`` array,
+    supplied by those fields having no defaults.
+
+    The bounds Pydantic would emit are stripped here; see
+    ``_UNSUPPORTED_SCHEMA_KEYS``. Field descriptions carry the range in prose
+    instead, so the model still knows what a plausible value looks like.
     """
     return {
         "name": "record_detected_foods",
         "description": (
             "Record the foods visible in the meal and estimate the edible mass of each "
             "in grams. Do not estimate calories or macronutrients — those are looked up "
-            "from a nutrition database using the labels and search terms you provide."
+            "from a nutrition database using the labels and search terms you provide. "
+            "`foods` takes one entry per distinct food: a plate of toast, avocado and an "
+            "egg is three entries, not one. Do not omit sides, drinks, spreads or "
+            "garnishes, and do not merge two foods into a single entry."
         ),
         "strict": True,
-        "input_schema": FoodDetectionResult.model_json_schema(),
+        "input_schema": _strip_unsupported(FoodDetectionResult.model_json_schema()),
     }

@@ -19,11 +19,12 @@ ACCESS_DENY = "at:deny:{jti}"
 # Sorted set of request timestamps inside the sliding window.
 RATE_LIMIT = "rl:{scope}:{subject}"
 
-# --- barcode hot cache, in front of the barcode_products table ---
-BARCODE = "barcode:{upc}"
-
-# --- AI food-detection results, keyed by image content ---
-AI_DETECTION = "ai:detect:{image_hash}"
+# Nothing from the Add Food pipeline is keyed here, deliberately. Detection
+# results and barcode products live in Postgres (`detections`,
+# `barcode_products`) — see app/services/detection_cache.py. Redis on this
+# deployment is a small shared instance reserved for refresh-token families and
+# the rate-limit counters above, and a detection payload is large, long-lived,
+# and perfectly served by a single-key Postgres read.
 
 # Prefixes handed to Lua, which derives dependent keys from values it reads
 # (a family id is only known after loading the token hash).
@@ -54,12 +55,3 @@ def access_deny_key(jti: str) -> str:
 
 def rate_limit_key(scope: str, subject: str) -> str:
     return RATE_LIMIT.format(scope=scope, subject=subject)
-
-
-
-def barcode_key(upc: str) -> str:
-    return BARCODE.format(upc=upc)
-
-
-def ai_detection_key(image_hash: str) -> str:
-    return AI_DETECTION.format(image_hash=image_hash)

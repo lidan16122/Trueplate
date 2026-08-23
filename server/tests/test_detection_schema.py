@@ -1,9 +1,12 @@
 """The load-bearing property: the model cannot return a calorie number."""
 
+import json
+
 import pytest
 from pydantic import ValidationError
 
 from app.schemas.detection import (
+    _UNSUPPORTED_SCHEMA_KEYS,
     DetectedFood,
     FoodDetectionResult,
     anthropic_tool_schema,
@@ -112,3 +115,59 @@ class TestValidation:
         )
         assert food.estimated_grams == 200
         assert food.preparation == "boiled"
+
+
+class TestStrictToolCompatibility:
+    """The schema has to survive the API, not just Pydantic.
+
+    Strict tool use accepts a subset of JSON Schema. Anything outside it is
+    rejected for the whole request, so a schema that is perfectly valid locally
+    can still 400 on every call — a failure no substituted test sees, because
+    the fake never validates the schema it is handed.
+    """
+
+    def test_no_constraint_keywords_strict_mode_rejects(self):
+        """Regression: `Field(gt=0, le=5000)` emitted exclusiveMinimum/maximum,
+        and the API answered 400 on every detection until they were stripped."""
+        rendered = json.dumps(anthropic_tool_schema())
+        present = sorted(key for key in _UNSUPPORTED_SCHEMA_KEYS if f'"{key}"' in rendered)
+        assert present == [], f"schema carries keywords strict tool use rejects: {present}"
+
+    def test_bounds_are_still_enforced_when_parsing_the_reply(self):
+        """Stripping them from the wire schema must not stop them validating.
+
+        Every other field is supplied deliberately: with one missing, this
+        passes on the missing field alone and would keep passing if the gram
+        bound were deleted outright.
+        """
+        with pytest.raises(ValidationError):
+            DetectedFood(
+                label="rice", estimated_grams=99_999, confidence=0.5, search_terms=["rice"]
+            )
+
+    def test_search_terms_is_required(self):
+        """Regression, seen live: the model returned a food with no terms at all.
+
+        ``default_factory=list`` reads as a harmless convenience and is not one
+        — Pydantic drops a defaulted field from ``required``, so the schema
+        stopped asking for the only input the resolution ladder has. The food
+        came back, resolved against a bare label, and nothing anywhere failed.
+        """
+        schema = anthropic_tool_schema()["input_schema"]
+        assert "search_terms" in schema["$defs"]["DetectedFood"]["required"]
+
+    def test_household_unit_is_a_closed_set(self):
+        """As free text this field attracted a paragraph of the model's own
+        working, which consumed the output budget and truncated the food list."""
+        schema = anthropic_tool_schema()["input_schema"]
+        unit = schema["$defs"]["DetectedFood"]["properties"]["household_unit"]
+        options = [o for o in unit["anyOf"] if o.get("type") != "null"]
+        assert options and "enum" in options[0], "household_unit must be an enum, not free text"
+
+    def test_every_object_is_strict_mode_ready(self):
+        schema = anthropic_tool_schema()["input_schema"]
+        for name, node in [("<root>", schema), *schema.get("$defs", {}).items()]:
+            if node.get("type") != "object":
+                continue
+            assert node.get("additionalProperties") is False, f"{name} allows extra properties"
+            assert node.get("required"), f"{name} has no required array"

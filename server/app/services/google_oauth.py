@@ -25,6 +25,24 @@ VALID_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
 # on every sign-in. Safe to share: it is a plain requests.Session wrapper.
 _transport = google_requests.Request()
 
+# How far our clock may lag Google's before a token is treated as forged.
+#
+# ``google-auth`` defaults this to **zero**, which means a token whose `iat` is a
+# single second ahead of this machine's clock is rejected outright — observed as
+# "Token used too early, 1787428240 < 1787428241" and surfaced to the user as a
+# failed sign-in. No clock agrees with Google's to the second, so a strict zero
+# makes sign-in fail intermittently on a perfectly healthy deployment.
+#
+# It widens the expiry check by the same amount. That costs nothing worth
+# worrying about: a Google ID token lives an hour and is exchanged for our own
+# session cookies immediately, so thirty seconds of grace at the end of it is not
+# a window anyone can use.
+#
+# This is tolerance, not a fix for a broken clock. A host drifting further than
+# this needs its time service looked at — the failure will come back, and by then
+# tokens will be *expiring* early too, which no skew allowance here can rescue.
+CLOCK_SKEW_SECONDS = 30
+
 
 class GoogleAuthError(Exception):
     """The credential was not a valid Google ID token for this application."""
@@ -43,7 +61,12 @@ class GoogleIdentity:
 def _verify_sync(credential: str) -> dict:
     # Passing the client id makes google-auth check `aud` for us; a token minted
     # for a different application is rejected rather than silently accepted.
-    return id_token.verify_oauth2_token(credential, _transport, settings.google_client_id)
+    return id_token.verify_oauth2_token(
+        credential,
+        _transport,
+        settings.google_client_id,
+        clock_skew_in_seconds=CLOCK_SKEW_SECONDS,
+    )
 
 
 async def verify_google_credential(credential: str) -> GoogleIdentity:
