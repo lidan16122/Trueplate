@@ -42,6 +42,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.base import as_utc
 from app.db.models.barcode import BarcodeProduct
 from app.db.models.food import Food
 from app.enums import NutritionSource
@@ -52,6 +53,7 @@ from app.schemas.detection import (
     ResolvedFoodItem,
 )
 from app.schemas.log import SURE_THRESHOLD
+from app.services.nutrition import matches
 from app.services.nutrition.open_food_facts import OpenFoodFactsClient
 from app.services.nutrition.usda import UsdaClient
 
@@ -84,15 +86,21 @@ class _Hit:
     precise: bool
 
 
-def _as_utc(value: datetime) -> datetime:
-    """Force a timestamp into UTC-aware form.
+def _usable(match: NutritionMatch | None) -> NutritionMatch | None:
+    """Drop a match whose figures cannot describe food, so the ladder widens.
 
-    Postgres hands back an aware datetime for ``DateTime(timezone=True)``;
-    SQLite, which the test suite runs on, hands back a naive one for the same
-    column. Comparing the two raises, so every read normalises here rather than
-    at each call site.
+    Every source funnels through the two pass methods below, which is why the
+    check sits here rather than in each client: a stored row, a scanned product
+    and a fetched one are all capable of carrying a unit error.
+
+    Dropping beats clamping. A clamped figure is silently wrong and gets saved;
+    a dropped one sends the resolver to the next rung, where there is usually a
+    real answer. It also keeps `FoodEntryCreate`'s bounds from rejecting the
+    user's entire meal at save time over one bad row.
     """
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
+    if match is None or not matches.is_plausible(match):
+        return None
+    return match
 
 
 def canonical_term(term: str) -> str:
@@ -103,20 +111,6 @@ def canonical_term(term: str) -> str:
     write-back converge instead of accumulating near-duplicates.
     """
     return _WHITESPACE.sub(" ", term.strip()).lower()
-
-
-def _match_from_row(row: Food) -> NutritionMatch:
-    return NutritionMatch(
-        food_id=str(row.id),
-        name=row.name,
-        brand=row.brand,
-        source=row.source,
-        source_ref=row.source_ref,
-        kcal_per_100g=row.kcal_per_100g,
-        protein_g_per_100g=row.protein_g_per_100g,
-        carbs_g_per_100g=row.carbs_g_per_100g,
-        fat_g_per_100g=row.fat_g_per_100g,
-    )
 
 
 class NutritionResolver:
@@ -164,9 +158,15 @@ class NutritionResolver:
             if hit is not None:
                 return await self._resolved(detected, hit, term, fell_back=index > 0)
 
-        # Every rung missed. The item is still returned so the user can log it and
-        # correct it by hand — losing the whole meal because one sauce was
-        # unrecognisable would be a worse failure than a zero.
+        # Every rung missed. The item is still *returned* — the confirm screen
+        # shows it, warns, and lets the user delete it — but it carries no
+        # nutrition, and `Confirm.save()` therefore leaves it out of the meal.
+        #
+        # Saying "so the user can correct it by hand" here would be a comment
+        # describing a feature that does not exist: correcting it by hand needs
+        # a manual-nutrition form, and an honest one takes four per-100 g fields
+        # rather than a calorie box, or the macro bars silently under-report the
+        # day. `NutritionSource.MANUAL` is reserved for it; the UI is not built.
         logger.info("No nutrition match for %r (terms: %s)", detected.label, terms)
         return ResolvedFoodItem(
             detected=detected,
@@ -186,12 +186,12 @@ class NutritionResolver:
         certain it saw a banana while the source we matched it against is a bag
         of banana chips.
         """
-        cached = await self._lookup_cached(term)
+        cached = _usable(await self._lookup_cached(term))
         if cached is not None:
             # Already vetted — it only got into the table by passing this same gate.
             return _Hit(cached, [], precise=True)
 
-        scanned = await self._lookup_barcode_product(term)
+        scanned = _usable(await self._lookup_barcode_product(term))
         if scanned is not None:
             # Something previously scanned by name. The row got there through an
             # exact UPC, so the figures are as good as a barcode's — but the
@@ -201,7 +201,7 @@ class NutritionResolver:
             # a free-text search of every packaged good on earth.
             return _Hit(scanned, [], precise=False)
 
-        usda_matches = await self._usda.search(term)
+        usda_matches = [m for m in await self._usda.search(term) if matches.is_plausible(m)]
         if usda_matches:
             # FoodData Central is a curated food database searched by name. A
             # top hit here is real evidence about a generic food.
@@ -219,7 +219,7 @@ class NutritionResolver:
         table — so these always surface as "Rough guess" with alternatives to
         swap to.
         """
-        off_matches = await self._off.search(term)
+        off_matches = [m for m in await self._off.search(term) if matches.is_plausible(m)]
         if off_matches:
             return _Hit(off_matches[0], off_matches[1:], precise=False)
         return None
@@ -288,10 +288,10 @@ class NutritionResolver:
                 _SOURCE_RANK.get(r.source, 99),
                 # Postgres and SQLite disagree on NULL ordering, so normalise here
                 # rather than in SQL.
-                -_as_utc(r.fetched_at or datetime.min).timestamp(),
+                -as_utc(r.fetched_at or datetime.min).timestamp(),
             )
         )
-        return _match_from_row(fresh[0])
+        return matches.from_food_row(fresh[0])
 
     async def _lookup_barcode_product(self, term: str) -> NutritionMatch | None:
         """Look for a previously scanned product by name.
@@ -305,24 +305,14 @@ class NutritionResolver:
         )
         if row is None:
             return None
-        return NutritionMatch(
-            name=row.name,
-            brand=row.brand,
-            source=row.source,
-            source_ref=row.upc,
-            serving_description=row.serving_description,
-            kcal_per_100g=row.kcal_per_100g,
-            protein_g_per_100g=row.protein_g_per_100g,
-            carbs_g_per_100g=row.carbs_g_per_100g,
-            fat_g_per_100g=row.fat_g_per_100g,
-        )
+        return matches.from_barcode_product(row)
 
     def _is_fresh(self, row: Food) -> bool:
         # Seeded rows are curated by hand and have no upstream to re-check, so
         # they never expire. Only fetched rows carry a TTL.
         if row.source == NutritionSource.SEED or row.fetched_at is None:
             return True
-        age = datetime.now(UTC) - _as_utc(row.fetched_at)
+        age = datetime.now(UTC) - as_utc(row.fetched_at)
         return age < timedelta(days=settings.foods_ttl_days)
 
     async def _write_back(self, term: str, match: NutritionMatch) -> NutritionMatch:
@@ -349,7 +339,7 @@ class NutritionResolver:
             existing.source_ref = match.source_ref
             existing.fetched_at = now
             await self._db.flush()
-            return _match_from_row(existing)
+            return matches.from_food_row(existing)
 
         row = Food(
             name=name,
@@ -378,7 +368,7 @@ class NutritionResolver:
                 select(Food).where(Food.name == name, Food.source == match.source)
             )
             if winner is not None:
-                return _match_from_row(winner)
+                return matches.from_food_row(winner)
             return match
 
-        return _match_from_row(row)
+        return matches.from_food_row(row)

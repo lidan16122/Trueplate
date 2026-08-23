@@ -89,6 +89,8 @@ export interface FoodEntry {
   brand: string | null;
   meal_type: MealType;
   quantity_g: number;
+  /** The portion as the user entered it — "1 cup", "1 bar". Display only. */
+  serving_description: string | null;
   calories: number;
   protein_g: number;
   carbs_g: number;

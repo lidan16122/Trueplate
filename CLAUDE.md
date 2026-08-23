@@ -51,6 +51,18 @@ services talk to a store, never to a Redis client. Deliberately *not* cached: us
 profiles, goals, and day totals — cheap Postgres queries whose caching would buy an
 invalidation problem for nothing.
 
+**Redis is for refresh-token families and rate-limit counters. Nothing else.** The two
+caches that pay for themselves — completed detections and scanned products — live in
+Postgres (`services/detection_cache.py`, `barcode_products`), because both payloads are
+large and long-lived and the Redis instance here is neither. `stores/keys.py` records the
+decision; the Redis cache shells that used to sit beside it were deleted rather than left
+as an invitation.
+
+A cache key folds in **everything that changes the answer** — model, effort, and
+`PROMPT_FINGERPRINT`, a digest over the system prompt and the tool schema. Without the
+last one, tuning a prompt is invisible on every photo already submitted, which is every
+photo anyone has complained about.
+
 **A multi-step Redis mutation that must not interleave goes in Lua.** A pipeline is not
 atomic. `stores/refresh_tokens.py` rotates tokens this way because two concurrent
 refreshes otherwise both observe the same token as live.
@@ -78,6 +90,35 @@ provider" into a migration. `app/enums.py` is the single source.
 
 Persisted models inherit the `MetaData` naming convention in `db/base.py` — without it
 Alembic emits unnamed constraints that no later migration can drop.
+
+## Resolving a food to a number
+
+`services/nutrition/` is the only place a calorie enters the app. One module per upstream,
+plus `resolver.py` walking them; routes and services talk to `NutritionResolver` and never
+to a source client.
+
+**Every upstream here answers confidently and none of them validate.** Two guards exist
+because of it, and they are siblings — `relevance.py` asks whether a row is about the right
+*food* (it has offered *Emu, fan fillet* for salmon), `matches.py` whether its *numbers*
+could describe food at all (kJ in a kcal field arrives looking ordinary). Both **drop**
+rather than clamp: a dropped row sends the ladder to the next rung where there is usually
+a real answer, where a clamped one is silently wrong and gets saved.
+
+**Open Food Facts is a second pass over the whole ladder, not a fourth rung per term.** It
+answers nearly any free-text query with a branded near-miss, so asked per rung it beats the
+broader term USDA would have answered properly — the specific query winning purely for
+being asked first.
+
+**Ranking FDC results is our job, not theirs.** Their descriptions are head-first, so the
+first comma-segment names the food and a bad match announces itself there. `rank_foods` is
+pure and public so `scripts/eval_matching.py` can score it against recorded payloads:
+FDC fails roughly one request in six, so an eval that re-fetched would measure their edge
+instead of our code. Change the ranking, run the eval, report the number.
+
+Two scripts, both worth knowing: `scripts/probe_resolver.py` runs the ladder against live
+APIs with no model call and no cost; `scripts/probe_detection.py` runs a real photo through
+the whole detection path, bypassing HTTP, auth and the cache — which is why it and the app
+can disagree.
 
 ## Client
 

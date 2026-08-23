@@ -325,7 +325,9 @@ export function AddFood() {
       {/* =========================== DESKTOP ============================ */}
       <div className="hidden min-h-dvh flex-col bg-surface md:flex">
         <header className="flex h-16 flex-none items-center justify-between border-b border-line-2 px-8">
-          <h1 className="text-lead font-semibold text-ink">Add food · {formatDayLabel(date)}</h1>
+          <h1 className="text-lead font-semibold text-ink">
+            Add food · <span className="tabular font-mono">{formatDayLabel(date)}</span>
+          </h1>
           <button
             onClick={() => navigate(-1)}
             className="text-body text-muted transition-colors hover:text-ink"

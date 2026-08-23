@@ -29,7 +29,7 @@ from app.schemas.detection import (
     NutritionMatch,
     ResolvedFoodItem,
 )
-from app.services.nutrition import OpenFoodFactsClient
+from app.services.nutrition import OpenFoodFactsClient, matches
 
 logger = logging.getLogger(__name__)
 
@@ -99,20 +99,6 @@ def normalize(code: str) -> list[str]:
     return candidates
 
 
-def _match_from_row(row: BarcodeProduct) -> NutritionMatch:
-    return NutritionMatch(
-        name=row.name,
-        brand=row.brand,
-        source=row.source,
-        source_ref=row.upc,
-        serving_description=row.serving_description,
-        kcal_per_100g=row.kcal_per_100g,
-        protein_g_per_100g=row.protein_g_per_100g,
-        carbs_g_per_100g=row.carbs_g_per_100g,
-        fat_g_per_100g=row.fat_g_per_100g,
-    )
-
-
 async def lookup(
     db: AsyncSession, off: OpenFoodFactsClient, code: str
 ) -> tuple[NutritionMatch, float, str | None]:
@@ -127,7 +113,7 @@ async def lookup(
         row = await db.get(BarcodeProduct, candidate)
         if row is not None:
             grams = row.serving_size_g or 100.0
-            return _match_from_row(row), grams, row.serving_description
+            return matches.from_barcode_product(row), grams, row.serving_description
 
     for candidate in candidates:
         found = await off.product(candidate)

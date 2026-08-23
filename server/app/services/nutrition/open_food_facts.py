@@ -17,11 +17,10 @@ import httpx
 from app.config import settings
 from app.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
+from app.services.nutrition.matches import kcal_from
 from app.services.nutrition.relevance import is_relevant
 
 logger = logging.getLogger(__name__)
-
-_KJ_PER_KCAL = 4.184
 
 # Only the fields we actually read. OFF products carry hundreds of keys and the
 # full document is large enough to matter across several lookups per detection.
@@ -70,11 +69,10 @@ def _to_match(product: dict[str, Any]) -> NutritionMatch | None:
     if not isinstance(nutriments, dict):
         return None
 
-    kcal = _number(nutriments, "energy-kcal_100g")
-    if kcal is None:
-        kj = _number(nutriments, "energy_100g") or _number(nutriments, "energy-kj_100g")
-        if kj is not None:
-            kcal = kj / _KJ_PER_KCAL
+    kcal = kcal_from(
+        _number(nutriments, "energy-kcal_100g"),
+        _number(nutriments, "energy_100g") or _number(nutriments, "energy-kj_100g"),
+    )
     if kcal is None:
         return None
 

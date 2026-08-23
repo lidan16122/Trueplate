@@ -42,6 +42,11 @@ class FoodEntryOut(BaseModel):
     brand: str | None
     meal_type: str
     quantity_g: float
+    # The household form of the portion, as it was saved — "1 cup", "1 bar".
+    # Written on the way in since the first version and never read back, which
+    # left the day view showing "158 g rice" for a portion the user entered as
+    # a cup. The column exists precisely so it does not have to.
+    serving_description: str | None
     calories: float
     protein_g: float
     carbs_g: float

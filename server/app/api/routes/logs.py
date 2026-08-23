@@ -31,6 +31,7 @@ def _entry_out(entry: FoodEntry) -> FoodEntryOut:
         brand=entry.brand,
         meal_type=entry.meal_type,
         quantity_g=entry.quantity_g,
+        serving_description=entry.serving_description,
         calories=entry.calories,
         protein_g=entry.protein_g,
         carbs_g=entry.carbs_g,

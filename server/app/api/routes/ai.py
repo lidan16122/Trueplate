@@ -120,7 +120,7 @@ async def detect_from_photo(
         response = await detector.detect_photo(
             prepared, note=note, meal_type=meal_type, image_hash=image_hash
         )
-    except (DetectionError, barcode_service.BarcodeError) as exc:
+    except DetectionError as exc:
         raise _translate(exc) from exc
 
     if not response.is_provisional:
@@ -162,7 +162,7 @@ async def detect_from_text(
 
     try:
         response = await detector.detect_text(payload.description, payload.meal_type)
-    except (DetectionError, barcode_service.BarcodeError) as exc:
+    except DetectionError as exc:
         raise _translate(exc) from exc
 
     # Same rule as the photo path: a reading that disagreed with its own

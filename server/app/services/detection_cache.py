@@ -21,6 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.base import as_utc
 from app.db.models.detection import Detection
 from app.enums import DetectionMethod, MealType
 from app.schemas.detection import FoodDetectionResponse
@@ -95,12 +96,9 @@ async def read(db: AsyncSession, cache_key: str) -> FoodDetectionResponse | None
     if row is None:
         return None
 
-    # Postgres returns an aware datetime for DateTime(timezone=True); SQLite,
-    # which the suite runs on, returns a naive one for the same column.
-    created = row.created_at
-    if created.tzinfo is None:
-        created = created.replace(tzinfo=UTC)
-    if datetime.now(UTC) - created > timedelta(days=settings.detections_ttl_days):
+    if datetime.now(UTC) - as_utc(row.created_at) > timedelta(
+        days=settings.detections_ttl_days
+    ):
         # Expired rather than wrong. Deleting it here keeps the table from
         # growing without bound, since nothing else ever prunes it.
         await db.delete(row)

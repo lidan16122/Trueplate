@@ -21,6 +21,7 @@ import httpx
 from app.config import settings
 from app.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
+from app.services.nutrition.matches import kcal_from
 from app.services.nutrition.relevance import SUBSTITUTE_MARKERS, content_tokens
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,6 @@ _ENERGY_KJ = 1062
 _PROTEIN = 1003
 _CARBS = 1005
 _FAT = 1004
-
-_KJ_PER_KCAL = 4.184
 
 # Even with a well-formed request FDC's edge fails perhaps one time in six, and
 # it fails in two shapes: a 400 with an nginx error page, and a 404 serving the
@@ -190,11 +189,7 @@ def _to_match(payload: dict[str, Any]) -> NutritionMatch | None:
     """Convert one FDC food into a match, or None if it carries no usable energy."""
     values = _nutrient_values(payload)
 
-    kcal = values.get(_ENERGY_KCAL)
-    if kcal is None and _ENERGY_KJ in values:
-        # Some branded rows publish only kJ. Deriving kcal is arithmetic on a
-        # sourced figure, not an estimate, so provenance survives it.
-        kcal = values[_ENERGY_KJ] / _KJ_PER_KCAL
+    kcal = kcal_from(values.get(_ENERGY_KCAL), values.get(_ENERGY_KJ))
     if kcal is None:
         # No energy means nothing to show the user. Better to fall through to the
         # next rung than to render a food with 0 kcal that looks resolved.

@@ -133,7 +133,12 @@ export function Confirm() {
           ? {
               ...d,
               matched: alternative,
-              name: alternative.name,
+              // The *source* changes, not the food's name. `name` is what goes
+              // into `food_entries.name`, which the resolver reserves for the
+              // user's own words — overwriting it with "Chicken, broilers or
+              // fryers, leg, meat and skin, cooked, roasted" puts database
+              // wording in the food log for good. The swapped row stays visible
+              // on the provenance line directly beneath.
               // Picking the right food by hand settles it; the warning has done
               // its job and should stop nagging.
               confirmed: true,
@@ -254,7 +259,12 @@ export function Confirm() {
   // Reached directly, with nothing to confirm.
   if (!proposal) return <Navigate to="/add" replace />;
 
-  const sourceNote = `${proposal.source_label}. Trueplate estimated the portions — the calorie numbers come from the food database once the grams are right.`;
+  const sourceNote =
+    `${proposal.source_label}. Trueplate estimated the portions — the calorie numbers ` +
+    "come from the food database once the grams are right." +
+    // `cached` existed to tell the user a reading cost nothing and is not a
+    // fresh look at the plate, and was never shown.
+    (proposal.cached ? " Recognised from an earlier reading of this photo." : "");
 
   // The model's own inventory, above the list it produced from it. When a plate
   // of five things comes back as one row, this line is the only thing on screen
@@ -264,6 +274,34 @@ export function Confirm() {
       <span className="font-mono text-micro tracking-[0.08em] text-faint">SAW </span>
       {proposal.meal_description}
     </p>
+  );
+
+  // Three things the server already worked out and nobody was told.
+  //
+  // `notes` is where the model records what it could not identify — "sauce could
+  // not be identified" — and it was being dropped on every successful reading.
+  // `is_provisional` means the server doubted the result enough not to cache it,
+  // which makes going back and submitting again a real retry rather than a
+  // replay; without saying so, the one person who can act on it cannot know.
+  // `cached` earns its keep the other way: this reading cost nothing and is not
+  // a fresh look at the plate.
+  const advisories = [
+    proposal.is_provisional &&
+      "Trueplate isn't confident it caught everything here. Going back and submitting the photo again will take a fresh look.",
+    proposal.notes,
+  ].filter((line): line is string => Boolean(line));
+
+  const advisoryNote = advisories.length > 0 && (
+    // Existing tokens only. A warning surface has no colour in `@theme`, and
+    // inventing one here would put a hex in a component where the design has
+    // no opinion — `text-warn` already carries the signal everywhere else.
+    <div className="flex flex-col gap-1 rounded-card border border-line-card bg-wash px-3.5 py-2.5">
+      {advisories.map((line) => (
+        <p key={line} className="text-caption leading-relaxed text-warn">
+          {line}
+        </p>
+      ))}
+    </div>
   );
   // JSX rather than a string so the count itself can be mono. Every number in
   // this app is, including the ones sitting inside a sentence — a figure that
@@ -473,6 +511,7 @@ export function Confirm() {
           <div className="h-[150px] flex-none">{photoPanel}</div>
           <p className="text-caption leading-relaxed text-subtle">{sourceNote}</p>
           {inventory}
+          {advisoryNote}
 
           <div className="flex flex-col gap-2">
             {rows.map(({ draft, calories, protein, carbs, fat, household }) => (
@@ -563,6 +602,7 @@ export function Confirm() {
             <div className="min-h-0 flex-1">{photoPanel}</div>
             <p className="flex-none text-caption leading-relaxed text-subtle">{sourceNote}</p>
             <div className="flex-none">{inventory}</div>
+            <div className="flex-none">{advisoryNote}</div>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col border-l border-line-2">

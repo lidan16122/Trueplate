@@ -339,3 +339,61 @@ async def test_a_real_rate_limit_is_not_retried(db_session: AsyncSession) -> Non
     )
 
     assert attempts["n"] == 1, "429 must not be retried"
+
+
+async def test_a_row_with_impossible_figures_is_skipped(db_session: AsyncSession) -> None:
+    """A unit error arrives looking like an ordinary number.
+
+    kJ written into a kcal field gives a plausible-looking row at four times the
+    real energy. `FoodEntryCreate` caps `kcal_per_100g` at 1000 and the save is
+    one request carrying every item, so a single such row 422s the whole meal
+    after the user has already corrected the portions. Dropping it here widens
+    the ladder to the next term instead.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params.get("query") or ""
+        if "foods/search" in request.url.path:
+            if query == "energy bar":
+                # 1883 kcal/100 g: the kJ figure, in the kcal field.
+                return httpx.Response(200, json=usda_food("Bar, energy", 1883.0))
+            return httpx.Response(200, json=usda_food("Snack bar", 450.0))
+        return httpx.Response(200, json={"products": []})
+
+    resolver = _resolver(db_session, httpx.MockTransport(handler))
+    item = await resolver.resolve(_detected("energy bar", ["energy bar", "snack bar"]))
+
+    assert item.matched is not None
+    assert item.matched.kcal_per_100g == 450.0
+    assert item.is_rough is True, "the second rung is an approximation by construction"
+
+
+async def test_an_impossible_macro_is_skipped_too(db_session: AsyncSession) -> None:
+    """Grams of protein per 100 g cannot exceed 100. `FoodEntryCreate` says so;
+    until now nothing upstream of it agreed."""
+    payload = usda_food("Protein, concentrate", 380.0)
+    payload["foods"][0]["foodNutrients"] = [
+        {"nutrientId": 1008, "value": 380.0},
+        {"nutrientId": 1003, "value": 780.0},
+    ]
+    transport = nutrition_transport(usda=payload, off_search=_off_products("Protein Bar", 400.0))
+    resolver = _resolver(db_session, transport)
+
+    item = await resolver.resolve(_detected("protein", ["protein"]))
+
+    assert item.matched is not None
+    assert item.matched.source == "open_food_facts", "USDA's row was unusable, not preferred"
+
+
+async def test_a_stored_row_that_went_bad_does_not_reach_the_user(
+    db_session: AsyncSession,
+) -> None:
+    """The gate sits on the resolver's two passes rather than in each client, so
+    a `foods` row written before the bound existed is caught on the way out."""
+    db_session.add(Food(name="mystery powder", source="seed", kcal_per_100g=4200.0))
+    await db_session.flush()
+
+    resolver = _resolver(db_session, nutrition_transport())
+    item = await resolver.resolve(_detected("mystery powder", ["mystery powder"]))
+
+    assert item.matched is None
