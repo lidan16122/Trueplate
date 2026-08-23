@@ -1,46 +1,83 @@
-import { GOAL_OPTIONS, type Option, SEX_OPTIONS } from "@/lib/labels";
-import type { GoalType, Sex } from "@/types/api";
+import { GOAL_LABEL, GOAL_OPTIONS, type Option, SEX_LABEL, SEX_OPTIONS } from "@/lib/labels";
+import type { GoalType, OnboardingPayload, Sex } from "@/types/api";
 
-/** Answers held as a number, and answers picked from a list. */
+/** The four answers held as a number. */
 export type NumberKey = "age" | "height" | "weight" | "targetWeight";
-export type ChoiceKey = "sex" | "goal";
 
-interface StepBase {
-  title: string;
-  sub: string;
-  /** Short label for the desktop answer summary. */
-  summary: string;
+/**
+ * One editable figure: its bounds, its step, and how it prints.
+ *
+ * The bounds deliberately mirror `OnboardingRequest`'s in
+ * `app/schemas/onboarding.py`. Not duplication for its own sake — the server's
+ * copy is what a hand-crafted request has to satisfy, and this one is what stops
+ * the UI ever producing a value the server would reject.
+ */
+export interface NumberField {
+  key: NumberKey;
+  /** Also the accessible name of the input. */
+  label: string;
+  unit: string;
+  min: number;
+  max: number;
+  step: number;
+  decimals: number;
   hint?: string;
 }
 
-export interface NumberStep extends StepBase {
-  kind: "number";
-  key: NumberKey;
-  unit?: string;
-  min?: number;
-  max?: number;
-  step?: number;
-  decimals?: number;
-}
+export const FIELDS: Record<NumberKey, NumberField> = {
+  age: { key: "age", label: "Age", unit: "years", min: 14, max: 120, step: 1, decimals: 0 },
+  height: { key: "height", label: "Height", unit: "cm", min: 50, max: 280, step: 1, decimals: 0 },
+  weight: { key: "weight", label: "Weight", unit: "kg", min: 20, max: 500, step: 0.5, decimals: 1 },
+  targetWeight: {
+    key: "targetWeight",
+    label: "Target weight",
+    unit: "kg",
+    min: 20,
+    max: 500,
+    step: 0.5,
+    decimals: 1,
+  },
+};
 
-export interface ChoiceStep extends StepBase {
-  kind: "choice";
-  key: ChoiceKey;
-  choices: readonly Option<Sex | GoalType>[];
+/** The three figures page one asks for, in the design's order. */
+export const BODY_KEYS = ["age", "height", "weight"] as const;
+
+export interface WizardPage {
+  id: "about" | "goal";
+  title: string;
+  sub: string;
 }
 
 /**
- * A discriminated union rather than one flat shape with optional fields.
+ * Two pages, not six questions.
  *
- * `kind` now narrows `key`, so `answers[step.key]` type-checks on its own where
- * it previously needed `step.key as "sex" | "goal"` at five separate call
- * sites — casts that would have kept compiling if a seventh step were added
- * with the wrong kind. It also makes `choices` required exactly where it is
- * used and absent where it is meaningless.
+ * The wizard used to be a list of steps that navigation walked, which made the
+ * step and the screen the same object. It is now a form per page, so a page owns
+ * only its heading — what each one *contains* is laid out in `Onboarding`,
+ * because the two frames arrange the same fields differently.
  */
-export type WizardStep = NumberStep | ChoiceStep;
+export const PAGES: WizardPage[] = [
+  {
+    id: "about",
+    title: "First, let’s get to know each other",
+    sub: "Six answers set your starting target. All of it stays editable in your profile.",
+  },
+  {
+    id: "goal",
+    title: "What is your goal?",
+    sub: "This shifts the target up or down. Nothing else about the app changes.",
+  },
+];
+
+/** Segment three is the reveal screen, which is why this is one more than PAGES. */
+export const TOTAL_STEPS = PAGES.length + 1;
+
+export const SEX_CHOICES: readonly Option<Sex>[] = SEX_OPTIONS;
+export const GOAL_CHOICES: readonly Option<GoalType>[] = GOAL_OPTIONS;
 
 export interface WizardAnswers {
+  firstName: string;
+  lastName: string;
   age: number;
   height: number;
   weight: number;
@@ -49,17 +86,21 @@ export interface WizardAnswers {
   goal: GoalType | null;
 }
 
-/** Answers with both choices made — the only shape the server can be sent. */
+/** Answers the server can be sent: both choices made, and a name to save. */
 export type CompletedAnswers = WizardAnswers & { sex: Sex; goal: GoalType };
 
 export function isComplete(answers: WizardAnswers): answers is CompletedAnswers {
   // A type guard rather than `answers.sex as Sex` at the call site: the wizard
   // can be reached mid-flight via browser history, and a cast would send the
-  // server a literal `null` while claiming otherwise.
-  return answers.sex !== null && answers.goal !== null;
+  // server a literal `null` while claiming otherwise. First name is checked here
+  // too because page one gates on it, so an answer set without one never came
+  // from the wizard finishing.
+  return answers.sex !== null && answers.goal !== null && answers.firstName.trim() !== "";
 }
 
 export const INITIAL_ANSWERS: WizardAnswers = {
+  firstName: "",
+  lastName: "",
   age: 32,
   height: 172,
   weight: 74,
@@ -68,116 +109,138 @@ export const INITIAL_ANSWERS: WizardAnswers = {
   goal: null,
 };
 
-/** The wizard's fixed order, straight from the design. */
-export const STEPS: WizardStep[] = [
-  {
-    key: "age",
-    kind: "number",
-    title: "How old are you?",
-    sub: "Age changes how many calories your body burns at rest.",
-    summary: "Age",
-    unit: "years",
-    min: 14,
-    max: 120,
-    step: 1,
-    decimals: 0,
-    hint: "14 and over",
-  },
-  {
-    key: "sex",
-    kind: "choice",
-    title: "What is your gender?",
-    sub: "Resting metabolism is calculated differently for male and female bodies.",
-    summary: "Gender",
-    choices: SEX_OPTIONS,
-  },
-  {
-    key: "height",
-    kind: "number",
-    title: "How tall are you?",
-    sub: "Height and weight together set the size of your body's baseline burn.",
-    summary: "Height",
-    unit: "cm",
-    min: 50,
-    max: 280,
-    step: 1,
-    decimals: 0,
-  },
-  {
-    key: "weight",
-    kind: "number",
-    title: "What do you weigh?",
-    sub: "Roughly is fine. You can update it any time, and the target follows.",
-    summary: "Weight",
-    unit: "kg",
-    min: 20,
-    max: 500,
-    step: 0.5,
-    decimals: 1,
-  },
-  {
-    key: "goal",
-    kind: "choice",
-    title: "What are you tracking toward?",
-    sub: "This only shifts the target up or down. Nothing about the app changes.",
-    summary: "Goal",
-    choices: GOAL_OPTIONS,
-  },
-  {
-    key: "targetWeight",
-    kind: "number",
-    title: "What weight are you aiming for?",
-    sub: "",
-    summary: "Target weight",
-    unit: "kg",
-    step: 0.5,
-    decimals: 1,
-  },
-];
-
-/** Maintaining has no target weight, so that step disappears entirely. */
-export function visibleSteps(goal: GoalType | null): WizardStep[] {
-  return goal === "maintain" ? STEPS.filter((s) => s.key !== "targetWeight") : STEPS;
+/** Maintaining has no target weight, so that row disappears entirely. */
+export function showTargetWeight(goal: GoalType | null): boolean {
+  return goal !== null && goal !== "maintain";
 }
 
 /**
- * Target weight is the one step whose bounds depend on earlier answers: it has
- * to sit on the correct side of current weight, or the goal contradicts itself.
+ * Target weight is the one field whose bounds depend on an earlier answer: it
+ * has to sit on the correct side of current weight, or the goal contradicts
+ * itself.
  */
-export function resolveStep(step: WizardStep, answers: WizardAnswers): WizardStep {
-  if (step.kind !== "number" || step.key !== "targetWeight") return step;
+export function resolveField(key: NumberKey, answers: WizardAnswers): NumberField {
+  const field = FIELDS[key];
+  if (key !== "targetWeight") return field;
 
   const losing = answers.goal !== "gain";
   const weight = answers.weight;
 
   return {
-    ...step,
-    title: losing ? "What weight are you aiming for?" : "What weight are you building toward?",
-    sub: losing
-      ? `Has to be below your current ${weight.toFixed(1)} kg. You can change it whenever.`
-      : `Has to be above your current ${weight.toFixed(1)} kg. You can change it whenever.`,
-    min: losing ? 20 : weight + 0.5,
-    max: losing ? weight - 0.5 : 500,
+    ...field,
+    min: losing ? field.min : weight + field.step,
+    max: losing ? weight - field.step : field.max,
     hint: losing ? `below ${weight.toFixed(1)} kg` : `above ${weight.toFixed(1)} kg`,
   };
 }
 
-export function stepValue(step: NumberStep, answers: WizardAnswers): number {
-  if (step.key === "targetWeight") {
-    // Seed a sensible default rather than making the user dial from zero.
-    return answers.targetWeight ?? answers.weight + (answers.goal === "gain" ? 5 : -5);
+export function fieldValue(field: NumberField, answers: WizardAnswers): number {
+  // Seed a sensible default rather than making the user dial from zero.
+  if (field.key === "targetWeight") return answers.targetWeight ?? defaultTargetWeight(answers);
+  return answers[field.key];
+}
+
+function defaultTargetWeight(answers: WizardAnswers): number {
+  return answers.weight + (answers.goal === "gain" ? 5 : -5);
+}
+
+export function clampValue(field: NumberField, value: number): number {
+  const rounded = Math.round(value / field.step) * field.step;
+  return Math.min(field.max, Math.max(field.min, rounded));
+}
+
+export function formatValue(field: NumberField, value: number): string {
+  return field.decimals ? value.toFixed(field.decimals) : String(Math.round(value));
+}
+
+export interface SummaryRow {
+  key: string;
+  label: string;
+  value: string;
+  /** Answered rows read brighter; the rest stay dim. */
+  answered: boolean;
+  /** Which page the row lives on, so the sidebar can jump to it. */
+  page: number;
+}
+
+/**
+ * The desktop sidebar's rows. Pure, so the panel is a map over data rather than
+ * seven hand-written rows that drift from what the pages actually collect.
+ */
+export function summaryRows(answers: WizardAnswers): SummaryRow[] {
+  const name = `${answers.firstName} ${answers.lastName}`.trim();
+
+  const rows: SummaryRow[] = [
+    { key: "name", label: "Name", value: name || "—", answered: name !== "", page: 0 },
+    { key: "age", label: "Age", value: `${Math.round(answers.age)} years`, answered: true, page: 0 },
+    {
+      key: "sex",
+      label: "Gender",
+      value: answers.sex ? SEX_LABEL[answers.sex] : "—",
+      answered: answers.sex !== null,
+      page: 0,
+    },
+    {
+      key: "height",
+      label: "Height",
+      value: `${Math.round(answers.height)} cm`,
+      answered: true,
+      page: 0,
+    },
+    {
+      key: "weight",
+      label: "Weight",
+      value: `${answers.weight.toFixed(1)} kg`,
+      answered: true,
+      page: 0,
+    },
+    {
+      key: "goal",
+      label: "Goal",
+      value: answers.goal ? GOAL_LABEL[answers.goal] : "—",
+      answered: answers.goal !== null,
+      page: 1,
+    },
+  ];
+
+  if (showTargetWeight(answers.goal)) {
+    rows.push({
+      key: "targetWeight",
+      label: "Target weight",
+      value: `${(answers.targetWeight ?? defaultTargetWeight(answers)).toFixed(1)} kg`,
+      answered: true,
+      page: 1,
+    });
   }
-  return answers[step.key];
+
+  return rows;
 }
 
-export function clampValue(step: NumberStep, value: number): number {
-  const stepSize = step.step ?? 1;
-  const rounded = Math.round(value / stepSize) * stepSize;
-  return Math.min(step.max ?? Infinity, Math.max(step.min ?? -Infinity, rounded));
+/**
+ * The one place wizard answers become a request body.
+ *
+ * Both callers matter: the goal page previews a target from it while the user is
+ * still choosing, and the reveal screen saves with it. Built twice they could
+ * differ by a default or a rounding, and the user would be shown one number and
+ * held to another.
+ */
+export function toPayload(answers: CompletedAnswers): OnboardingPayload {
+  return {
+    first_name: answers.firstName.trim(),
+    last_name: answers.lastName.trim(),
+    age: answers.age,
+    sex: answers.sex,
+    height_cm: answers.height,
+    weight_kg: answers.weight,
+    goal_type: answers.goal,
+    target_weight_kg:
+      answers.goal === "maintain" ? null : (answers.targetWeight ?? defaultTargetWeight(answers)),
+    rate_kg_per_week: 0.5,
+    // Captured silently — daily logs are keyed on the user's local date.
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  };
 }
 
-export function formatValue(step: NumberStep, value: number): string {
-  return step.decimals ? value.toFixed(step.decimals) : String(Math.round(value));
-}
-
-export { GOAL_LABEL, SEX_LABEL } from "@/lib/labels";
+// Re-exported so a screen that renders an answer imports its wording from the
+// same module as the answer itself.
+export { GOAL_LABEL, SEX_LABEL };

@@ -4,26 +4,9 @@ import { Navigate, useLocation, useNavigate } from "react-router";
 import { useAuth } from "@/auth/useAuth";
 import { ErrorNote, Eyebrow, ProgressBar, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
-import type { OnboardingPayload, Targets } from "@/types/api";
+import type { Targets } from "@/types/api";
 
-import { type CompletedAnswers, isComplete, type WizardAnswers } from "./wizardSteps";
-
-function toPayload(answers: CompletedAnswers): OnboardingPayload {
-  return {
-    age: answers.age,
-    sex: answers.sex,
-    height_cm: answers.height,
-    weight_kg: answers.weight,
-    goal_type: answers.goal,
-    target_weight_kg:
-      answers.goal === "maintain"
-        ? null
-        : (answers.targetWeight ?? answers.weight + (answers.goal === "gain" ? 5 : -5)),
-    rate_kg_per_week: 0.5,
-    // Captured silently — daily logs are keyed on the user's local date.
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  };
-}
+import { isComplete, toPayload, type WizardAnswers } from "./wizardSteps";
 
 export function TargetReveal() {
   const navigate = useNavigate();
@@ -161,7 +144,11 @@ export function TargetReveal() {
             {saving ? "Saving…" : "Start tracking"}
           </button>
           <button
-            onClick={() => navigate("/onboarding")}
+            // Back to the goal page with the answers in hand. Passing nothing
+            // sent the wizard back to its defaults, which cost one re-answer
+            // when the wizard was six screens and costs every one of them now
+            // that changing a goal means walking the name and body page again.
+            onClick={() => navigate("/onboarding", { state: { answers, page: 1 } })}
             className="h-14 rounded-lg border border-line px-6 text-caption text-muted transition-colors hover:border-ink hover:text-ink md:h-[52px]"
           >
             Change my answers

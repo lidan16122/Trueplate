@@ -9,8 +9,38 @@ gamble.
 
 from datetime import UTC, datetime
 
+from app.services.google_oauth import GoogleIdentity
 from app.stores import keys
 from app.stores.refresh_tokens import hash_token
+
+AUTH_API = "/api/v1/auth"
+
+ALICE = GoogleIdentity(
+    subject="google-subject-alice",
+    email="alice@example.com",
+    email_verified=True,
+    first_name="Alice",
+    last_name="Moreno",
+    picture="https://example.com/alice.jpg",
+)
+
+
+def google_payload(**overrides) -> dict:
+    """A claim set shaped like one Google's verifier returns."""
+    return {
+        "iss": "https://accounts.google.com",
+        "sub": ALICE.subject,
+        "email": ALICE.email,
+        "email_verified": True,
+        "given_name": ALICE.first_name,
+        "family_name": ALICE.last_name,
+        "picture": ALICE.picture,
+        **overrides,
+    }
+
+
+async def sign_in(client, credential: str = "good-token"):
+    return await client.post(f"{AUTH_API}/google", json={"credential": credential})
 
 
 async def age_tombstone(redis, raw_token: str, seconds: float = 3600) -> None:

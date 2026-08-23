@@ -39,6 +39,15 @@ async def complete_onboarding(
     """Persist the wizard answers and derive the first goal."""
     today = datetime.now(UTC).date()
 
+    # Names live on `users`, and `user` here is the live row — assigning to it
+    # rides the same commit as the profile and the goal below. Blank is ignored
+    # rather than stored: the wizard prefills from Google, so an empty field is
+    # a cleared input, not a request to have no name.
+    if first_name := (payload.first_name or "").strip():
+        user.first_name = first_name
+    if last_name := (payload.last_name or "").strip():
+        user.last_name = last_name
+
     profile = await db.scalar(select(UserProfile).where(UserProfile.user_id == user.id))
     if profile is None:
         profile = UserProfile(user_id=user.id)
