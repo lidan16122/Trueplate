@@ -4,30 +4,31 @@ import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "@/auth/useAuth";
 import { NumberStepper } from "@/components/NumberStepper";
 import { api } from "@/lib/api";
+import { GOAL_OPTIONS, SEX_OPTIONS } from "@/lib/labels";
 import type { GoalType, Sex, Targets } from "@/types/api";
 
 import {
   BODY_KEYS,
   clampValue,
+  type Drafts,
   fieldValue,
+  FIELDS,
   formatValue,
-  GOAL_CHOICES,
   INITIAL_ANSWERS,
   isComplete,
-  type NumberField,
   type NumberKey,
+  type PageId,
   PAGES,
+  pageBlocked,
+  pageIndex,
   resolveField,
-  SEX_CHOICES,
   showTargetWeight,
   summaryRows,
   toPayload,
   TOTAL_STEPS,
   type WizardAnswers,
+  withDrafts,
 } from "./wizardSteps";
-
-/** A half-typed figure per field. Three are editable at once on page one. */
-type Drafts = Partial<Record<NumberKey, string>>;
 
 export function Onboarding() {
   const navigate = useNavigate();
@@ -37,7 +38,7 @@ export function Onboarding() {
   // Returning from the reveal carries the answers back, so "change my answers"
   // is an edit rather than a restart. Names default to what Google supplied;
   // the wizard asks so they can be corrected, not so they can be typed twice.
-  const resumed = (location.state as { answers?: WizardAnswers; page?: number } | null) ?? null;
+  const resumed = (location.state as { answers?: WizardAnswers; page?: PageId } | null) ?? null;
   const [answers, setAnswers] = useState<WizardAnswers>(
     () =>
       resumed?.answers ?? {
@@ -46,70 +47,75 @@ export function Onboarding() {
         lastName: user?.last_name ?? "",
       },
   );
-  const [page, setPage] = useState(() => (resumed?.page === 1 ? 1 : 0));
+  const [page, setPage] = useState<PageId>(() => resumed?.page ?? "about");
   const [drafts, setDrafts] = useState<Drafts>({});
 
-  const current = PAGES[page];
-  const isGoalPage = current.id === "goal";
+  const current = PAGES[pageIndex(page)];
+  const isGoalPage = page === "goal";
 
-  const setNumber = useCallback((field: NumberField, next: number) => {
-    setAnswers((prev) => ({ ...prev, [field.key]: clampValue(field, next) }));
+  const clearDraft = useCallback((key: NumberKey) => {
+    setDrafts((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
   }, []);
 
-  /** Parse and clamp whatever is half-typed, then drop the draft. */
-  const commitDraft = useCallback(
-    (key: NumberKey) => {
-      const draft = drafts[key];
-      if (draft === undefined) return;
-      const parsed = Number.parseFloat(draft);
-      if (!Number.isNaN(parsed)) setNumber(resolveField(key, answers), parsed);
-      setDrafts((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    },
-    [drafts, answers, setNumber],
-  );
-
-  const commitAll = useCallback(() => {
-    for (const key of Object.keys(drafts) as NumberKey[]) commitDraft(key);
-  }, [drafts, commitDraft]);
+  /**
+   * Fold every half-typed figure in and hand the result back, rather than only
+   * queueing it. Callers that commit and then act in the same tick — Enter,
+   * which commits and navigates — need the committed value, not the one this
+   * render closed over.
+   */
+  const commitAll = useCallback((): WizardAnswers => {
+    const committed = withDrafts(answers, drafts);
+    if (committed !== answers) setAnswers(committed);
+    setDrafts({});
+    return committed;
+  }, [answers, drafts]);
 
   // Page one needs a name and a gender; page two needs a goal. Everything else
-  // has a usable default, which is what lets both pages be one form.
-  const blocked = isGoalPage ? answers.goal === null : !answers.firstName.trim() || !answers.sex;
+  // has a usable default, which is what lets both pages be one form. Drafts hold
+  // only figures, so they cannot change this — no need to commit before asking.
+  const blocked = pageBlocked(page, answers);
 
   const goNext = useCallback(() => {
-    commitAll();
+    const committed = commitAll();
     if (blocked) return;
     if (!isGoalPage) {
-      setPage(1);
+      setPage("goal");
       return;
     }
-    if (isComplete(answers)) navigate("/onboarding/done", { state: { answers } });
-  }, [commitAll, blocked, isGoalPage, answers, navigate]);
+    if (isComplete(committed)) navigate("/onboarding/done", { state: { answers: committed } });
+  }, [commitAll, blocked, isGoalPage, navigate]);
 
   // Back off page one is the only way out. Until a profile exists ProtectedRoute
   // redirects every other route here — /profile, where sign-out normally lives,
   // included — so someone who picked the wrong Google account would be stuck.
-  // The design draws this as a back arrow to the sign-in screen, which is what
-  // signing out lands on.
+  // The design draws this as a back arrow to the sign-in screen; in an app with
+  // a real session that screen is only reachable by ending it, so this signs out
+  // rather than navigating to a route PublicOnlyRoute would bounce straight back.
   const goBack = useCallback(async () => {
     if (isGoalPage) {
-      setDrafts({});
-      setPage(0);
+      // Commit, never discard: a typed target weight is an answer, and leaving
+      // the page is not a reason to throw it away.
+      commitAll();
+      setPage("about");
       return;
     }
     await signOut();
     navigate("/signin", { replace: true });
-  }, [isGoalPage, signOut, navigate]);
+  }, [isGoalPage, commitAll, signOut, navigate]);
 
   // The desktop footer's "Enter ↵" hint promises this, so it has to work. Arrow
   // stepping is gone with the one-figure-per-screen layout that justified it.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Enter") return;
+      // A focused button turns Enter into a click of its own. Cancelling that
+      // wholesale left the goal cards and Back reachable by Tab but impossible
+      // to activate, which is the entire keyboard path through this page.
+      if (event.target instanceof Element && event.target.closest("button, a")) return;
       event.preventDefault();
       goNext();
     };
@@ -119,16 +125,15 @@ export function Onboarding() {
 
   const chooseSex = useCallback((id: Sex) => setAnswers((prev) => ({ ...prev, sex: id })), []);
 
-  const chooseGoal = useCallback((id: GoalType) => {
-    // Switching goal invalidates a target weight picked for the old direction —
-    // it would now be on the wrong side of current weight.
-    setAnswers((prev) => ({ ...prev, goal: id, targetWeight: null }));
-    setDrafts((prev) => {
-      const next = { ...prev };
-      delete next.targetWeight;
-      return next;
-    });
-  }, []);
+  const chooseGoal = useCallback(
+    (id: GoalType) => {
+      // Switching goal invalidates a target weight picked for the old direction —
+      // it would now be on the wrong side of current weight.
+      setAnswers((prev) => ({ ...prev, goal: id, targetWeight: null }));
+      clearDraft("targetWeight");
+    },
+    [clearDraft],
+  );
 
   const preview = useTargetPreview(answers, isGoalPage);
   const rows = useMemo(() => summaryRows(answers), [answers]);
@@ -142,10 +147,26 @@ export function Onboarding() {
         unit={field.unit}
         label={field.label}
         onChange={(next) => setDrafts((prev) => ({ ...prev, [key]: next }))}
-        onCommit={() => commitDraft(key)}
+        onCommit={() => {
+          setAnswers((prev) => withDrafts(prev, { [key]: drafts[key] }));
+          clearDraft(key);
+        }}
         onStep={(direction) => {
-          commitDraft(key);
-          setNumber(field, fieldValue(field, answers) + direction * field.step);
+          // Steps from whatever is on screen, typed or committed. Reading the
+          // render's `answers` instead would step from the pre-edit figure and
+          // silently discard what the user had just typed.
+          setAnswers((prev) => {
+            const committed = withDrafts(prev, { [key]: drafts[key] });
+            const stepped = resolveField(key, committed);
+            return {
+              ...committed,
+              [key]: clampValue(
+                stepped,
+                fieldValue(stepped, committed) + direction * stepped.step,
+              ),
+            };
+          });
+          clearDraft(key);
         }}
       />
     );
@@ -156,7 +177,7 @@ export function Onboarding() {
       {/* Desktop: live answer summary, jump back to anything already asked. */}
       <aside className="hidden w-[400px] flex-none flex-col gap-8 bg-ink p-11 md:flex">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-white text-caption font-bold text-ink">
+          <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-white text-item font-bold text-ink">
             T
           </div>
           <span className="text-lead font-semibold text-white">Trueplate</span>
@@ -164,7 +185,7 @@ export function Onboarding() {
 
         <div className="flex flex-col gap-1.5">
           <div className="font-mono text-label tracking-[0.12em] text-on-dark-dim uppercase">
-            Setup · {page + 1} / {TOTAL_STEPS}
+            Setup · {pageIndex(page) + 1} / {TOTAL_STEPS}
           </div>
           <p className="text-item leading-relaxed text-pretty text-on-dark">
             A few answers give us a starting target. It gets more accurate once you have logged a
@@ -178,7 +199,10 @@ export function Onboarding() {
             return (
               <li key={row.key}>
                 <button
-                  onClick={() => setPage(row.page)}
+                  onClick={() => {
+                    commitAll();
+                    setPage(row.page);
+                  }}
                   className="-mx-2.5 flex w-[calc(100%+20px)] items-baseline justify-between gap-4 rounded-badge px-2.5 py-2.5 text-left transition-colors hover:bg-ink-2"
                 >
                   <span
@@ -227,7 +251,7 @@ export function Onboarding() {
           <div className="flex flex-1 gap-1 md:w-[280px] md:flex-none md:gap-1.5">
             {Array.from({ length: TOTAL_STEPS }, (_, i) => (
               <div key={i} className="h-[3px] flex-1 overflow-hidden rounded-[2px] bg-track">
-                {i <= page && <div className="h-full bg-accent" />}
+                {i <= pageIndex(page) && <div className="h-full bg-accent" />}
               </div>
             ))}
           </div>
@@ -251,7 +275,7 @@ export function Onboarding() {
             {isGoalPage ? (
               <div className="flex flex-col gap-3.5">
                 <div className="flex flex-col gap-2.5">
-                  {GOAL_CHOICES.map((choice) => {
+                  {GOAL_OPTIONS.map((choice) => {
                     const selected = answers.goal === choice.id;
                     return (
                       <button
@@ -310,7 +334,7 @@ export function Onboarding() {
                 <div className="flex flex-col gap-[7px]">
                   <span className="text-caption text-muted">Gender</span>
                   <div className="flex gap-2">
-                    {SEX_CHOICES.map((choice) => {
+                    {SEX_OPTIONS.map((choice) => {
                       const selected = answers.sex === choice.id;
                       return (
                         <button
@@ -337,7 +361,7 @@ export function Onboarding() {
                       className="flex items-center justify-between gap-3 md:flex-col md:items-start md:gap-2"
                     >
                       <span className="text-item font-medium text-ink md:text-caption md:font-normal md:text-muted">
-                        {FIELD_LABEL[key]}
+                        {FIELDS[key].label}
                       </span>
                       {stepper(key)}
                     </div>
@@ -372,12 +396,6 @@ export function Onboarding() {
     </div>
   );
 }
-
-const FIELD_LABEL: Record<(typeof BODY_KEYS)[number], string> = {
-  age: "Age",
-  height: "Height",
-  weight: "Weight",
-};
 
 function NameField({
   label,
@@ -421,11 +439,17 @@ function TargetPreview({ preview }: { preview: PreviewState }) {
         <span className="font-mono text-label tracking-[0.12em] text-on-dark-dim uppercase">
           Daily target
         </span>
-        <span className="text-caption leading-snug text-on-dark">
-          {preview.status === "ready"
-            ? `${preview.targets.protein_g} g protein · ${preview.targets.carbs_g} g carbs · ${preview.targets.fat_g} g fat`
-            : note}
-        </span>
+        {/* Mono only on the branch that carries figures — the fallback is prose,
+            and the three grams move as goals are tapped, which is exactly the
+            reflow `tabular` exists to stop. */}
+        {preview.status === "ready" ? (
+          <span className="tabular font-mono text-caption leading-snug text-on-dark">
+            {preview.targets.protein_g} g protein · {preview.targets.carbs_g} g carbs ·{" "}
+            {preview.targets.fat_g} g fat
+          </span>
+        ) : (
+          <span className="text-caption leading-snug text-on-dark">{note}</span>
+        )}
       </div>
       <div className="flex flex-none items-baseline gap-1.5">
         <span className="tabular font-mono text-figure font-medium tracking-[-0.03em] text-white">

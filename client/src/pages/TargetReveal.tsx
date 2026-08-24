@@ -148,7 +148,7 @@ export function TargetReveal() {
             // sent the wizard back to its defaults, which cost one re-answer
             // when the wizard was six screens and costs every one of them now
             // that changing a goal means walking the name and body page again.
-            onClick={() => navigate("/onboarding", { state: { answers, page: 1 } })}
+            onClick={() => navigate("/onboarding", { state: { answers, page: "goal" } })}
             className="h-14 rounded-lg border border-line px-6 text-caption text-muted transition-colors hover:border-ink hover:text-ink md:h-[52px]"
           >
             Change my answers

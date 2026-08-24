@@ -57,8 +57,11 @@ async def db_session() -> AsyncGenerator[AsyncSession]:
     ``.with_variant(JSON(), "sqlite")``, so the whole schema builds here and the
     detection path can be tested without a running Postgres.
 
-    ``goals`` partial index degrades to a plain unique index on SQLite, which is
-    harmless: the constraint it encodes is one active goal per user either way.
+    ``goals`` carries its partial unique index here too. It used to degrade to
+    a plain unique index on ``user_id``, described as harmless on the grounds
+    that both encode one active goal per user. They do not: the unconditional
+    one also forbids a *closed* goal beside an open one, so superseding a goal —
+    the thing the partial predicate exists to allow — raised only under test.
     """
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     tables = [

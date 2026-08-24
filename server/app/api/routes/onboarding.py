@@ -11,7 +11,7 @@ from app.core.nutrition import (
     birth_date_from_age,
     calculate_targets,
 )
-from app.db.models import UserProfile, WeightEntry
+from app.db.models import User, UserProfile, WeightEntry
 from app.enums import GoalType, WeightSource
 from app.schemas.onboarding import (
     GoalOut,
@@ -32,6 +32,24 @@ from app.services.targets import (
 router = APIRouter(tags=["profile"])
 
 
+def _apply_name(user: User, first_name: str | None, last_name: str | None) -> None:
+    """Write a corrected name, ignoring blanks.
+
+    Both write paths prefill the field from Google, so an empty string can only
+    mean the box was cleared — never a request to have no name. Storing it would
+    leave the derived full name and initials with nothing to render, and
+    the avatar is built from initials.
+
+    Shared because the two routes were drifting: onboarding refused a blank
+    while the profile PATCH let one through, so the same column had two rules
+    depending on which screen the user happened to be on.
+    """
+    if first := (first_name or "").strip():
+        user.first_name = first
+    if last := (last_name or "").strip():
+        user.last_name = last
+
+
 @router.post("/onboarding", response_model=OnboardingResponse, status_code=status.HTTP_201_CREATED)
 async def complete_onboarding(
     payload: OnboardingRequest, user: CurrentUser, db: DbSession
@@ -40,13 +58,8 @@ async def complete_onboarding(
     today = datetime.now(UTC).date()
 
     # Names live on `users`, and `user` here is the live row — assigning to it
-    # rides the same commit as the profile and the goal below. Blank is ignored
-    # rather than stored: the wizard prefills from Google, so an empty field is
-    # a cleared input, not a request to have no name.
-    if first_name := (payload.first_name or "").strip():
-        user.first_name = first_name
-    if last_name := (payload.last_name or "").strip():
-        user.last_name = last_name
+    # rides the same commit as the profile and the goal below.
+    _apply_name(user, payload.first_name, payload.last_name)
 
     profile = await db.scalar(select(UserProfile).where(UserProfile.user_id == user.id))
     if profile is None:
@@ -163,10 +176,7 @@ async def update_profile(
     if profile is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not set up yet")
 
-    if payload.first_name is not None:
-        user.first_name = payload.first_name
-    if payload.last_name is not None:
-        user.last_name = payload.last_name
+    _apply_name(user, payload.first_name, payload.last_name)
     if payload.age is not None:
         profile.birth_date = birth_date_from_age(payload.age, today)
     if payload.sex is not None:

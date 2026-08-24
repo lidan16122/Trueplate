@@ -51,6 +51,37 @@ class TestOnboardingName:
         user = (await client.get(f"{API}/auth/me")).json()["user"]
         assert user["full_name"] == "Alice Moreno"
 
+    async def test_the_profile_patch_refuses_a_blank_name_too(self, client, google_ok):
+        # The same column, so the same rule. These two paths had drifted: the
+        # PATCH stored "" where onboarding ignored it, which meant whether a
+        # cleared box wiped your name depended on which screen you cleared it
+        # from.
+        await sign_in(client)
+        await complete(client)
+
+        patched = await client.patch(f"{API}/profile", json={"first_name": "", "last_name": ""})
+
+        assert patched.status_code == 200
+        user = (await client.get(f"{API}/auth/me")).json()["user"]
+        assert user["full_name"] == "Alice Moreno"
+
+
+class TestGoalSupersession:
+    async def test_changing_the_goal_opens_a_new_one_beside_the_closed_old_one(
+        self, client, google_ok
+    ):
+        # Superseding closes the old row and opens a new one rather than mutating
+        # in place, so a day logged last month can still be judged against the
+        # target that was in force then. Untestable until `goals` kept its
+        # partial index under SQLite — the degraded one forbade the closed row.
+        await sign_in(client)
+        await complete(client)
+
+        patched = await client.patch(f"{API}/profile", json={"goal_type": "gain"})
+
+        assert patched.status_code == 200
+        assert patched.json()["goal_type"] == "gain"
+
 
 class TestTargetPreview:
     async def test_preview_returns_a_target_without_storing_a_goal(self, client, google_ok):

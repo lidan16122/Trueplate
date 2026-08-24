@@ -1,4 +1,4 @@
-import { GOAL_LABEL, GOAL_OPTIONS, type Option, SEX_LABEL, SEX_OPTIONS } from "@/lib/labels";
+import { GOAL_LABEL, SEX_LABEL } from "@/lib/labels";
 import type { GoalType, OnboardingPayload, Sex } from "@/types/api";
 
 /** The four answers held as a number. */
@@ -72,8 +72,19 @@ export const PAGES: WizardPage[] = [
 /** Segment three is the reveal screen, which is why this is one more than PAGES. */
 export const TOTAL_STEPS = PAGES.length + 1;
 
-export const SEX_CHOICES: readonly Option<Sex>[] = SEX_OPTIONS;
-export const GOAL_CHOICES: readonly Option<GoalType>[] = GOAL_OPTIONS;
+/**
+ * Pages are addressed by name, not by index.
+ *
+ * `page: 1` travelled between the sidebar's jump targets, the wizard's own
+ * state, and the reveal screen's way back. Three places that a reorder of
+ * `PAGES` would have silently pointed at the wrong screen, with nothing to
+ * typecheck against.
+ */
+export type PageId = WizardPage["id"];
+
+export function pageIndex(id: PageId): number {
+  return PAGES.findIndex((page) => page.id === id);
+}
 
 export interface WizardAnswers {
   firstName: string;
@@ -89,13 +100,37 @@ export interface WizardAnswers {
 /** Answers the server can be sent: both choices made, and a name to save. */
 export type CompletedAnswers = WizardAnswers & { sex: Sex; goal: GoalType };
 
+/**
+ * What a page will not let you leave without.
+ *
+ * The design's own bindings disagree with each other here: its `blocked`
+ * derives the name from `first + ' ' + last`, so a last name alone would pass,
+ * while its `next()` guards on `first.trim()` and would then refuse to move.
+ * We follow `next()` — the sidebar row is labelled "Name" and a person with
+ * only a surname entered has not answered it.
+ */
+export function pageBlocked(page: PageId, answers: WizardAnswers): boolean {
+  return page === "about"
+    ? !hasName(answers) || answers.sex === null
+    : answers.goal === null;
+}
+
+function hasName(answers: WizardAnswers): boolean {
+  return answers.firstName.trim() !== "";
+}
+
 export function isComplete(answers: WizardAnswers): answers is CompletedAnswers {
+  // Phrased as the two page gates rather than a third list of conditions: the
+  // wizard cannot finish a page it is blocked on, so an answer added to
+  // `pageBlocked` is one this must demand too. The explicit null checks that
+  // follow earn nothing at runtime — they are what lets TypeScript narrow,
+  // which `pageBlocked` cannot do through a function call.
+  //
   // A type guard rather than `answers.sex as Sex` at the call site: the wizard
   // can be reached mid-flight via browser history, and a cast would send the
-  // server a literal `null` while claiming otherwise. First name is checked here
-  // too because page one gates on it, so an answer set without one never came
-  // from the wizard finishing.
-  return answers.sex !== null && answers.goal !== null && answers.firstName.trim() !== "";
+  // server a literal `null` while claiming otherwise.
+  if (pageBlocked("about", answers) || pageBlocked("goal", answers)) return false;
+  return answers.sex !== null && answers.goal !== null;
 }
 
 export const INITIAL_ANSWERS: WizardAnswers = {
@@ -149,6 +184,34 @@ export function clampValue(field: NumberField, value: number): number {
   return Math.min(field.max, Math.max(field.min, rounded));
 }
 
+/** A half-typed figure per field. Three are editable at once on page one. */
+export type Drafts = Partial<Record<NumberKey, string>>;
+
+/**
+ * Fold whatever is half-typed back into the answers, as one value.
+ *
+ * Pure, and that is the point. Committing used to be a `setAnswers` queued for
+ * the next render, so anything that committed and then acted in the same tick —
+ * Enter, which commits and navigates — read the answers as they were *before*
+ * the edit and saved a target weight the user had already changed. Clicking
+ * only worked by accident, because mousedown blurs the input first.
+ *
+ * Unparseable text is dropped rather than zeroed: "7" on the way to "70" is not
+ * a request to weigh nothing.
+ */
+export function withDrafts(answers: WizardAnswers, drafts: Drafts): WizardAnswers {
+  let next = answers;
+  for (const [key, draft] of Object.entries(drafts) as [NumberKey, string | undefined][]) {
+    if (draft === undefined) continue;
+    const parsed = Number.parseFloat(draft);
+    if (Number.isNaN(parsed)) continue;
+    // Re-resolved per field: committing a weight moves the bounds that the
+    // target weight in the same batch has to be clamped against.
+    next = { ...next, [key]: clampValue(resolveField(key, next), parsed) };
+  }
+  return next;
+}
+
 export function formatValue(field: NumberField, value: number): string {
   return field.decimals ? value.toFixed(field.decimals) : String(Math.round(value));
 }
@@ -160,7 +223,7 @@ export interface SummaryRow {
   /** Answered rows read brighter; the rest stay dim. */
   answered: boolean;
   /** Which page the row lives on, so the sidebar can jump to it. */
-  page: number;
+  page: PageId;
 }
 
 /**
@@ -171,35 +234,35 @@ export function summaryRows(answers: WizardAnswers): SummaryRow[] {
   const name = `${answers.firstName} ${answers.lastName}`.trim();
 
   const rows: SummaryRow[] = [
-    { key: "name", label: "Name", value: name || "—", answered: name !== "", page: 0 },
-    { key: "age", label: "Age", value: `${Math.round(answers.age)} years`, answered: true, page: 0 },
+    { key: "name", label: "Name", value: name || "—", answered: name !== "", page: "about" },
+    { key: "age", label: "Age", value: `${Math.round(answers.age)} years`, answered: true, page: "about" },
     {
       key: "sex",
       label: "Gender",
       value: answers.sex ? SEX_LABEL[answers.sex] : "—",
       answered: answers.sex !== null,
-      page: 0,
+      page: "about",
     },
     {
       key: "height",
       label: "Height",
       value: `${Math.round(answers.height)} cm`,
       answered: true,
-      page: 0,
+      page: "about",
     },
     {
       key: "weight",
       label: "Weight",
       value: `${answers.weight.toFixed(1)} kg`,
       answered: true,
-      page: 0,
+      page: "about",
     },
     {
       key: "goal",
       label: "Goal",
       value: answers.goal ? GOAL_LABEL[answers.goal] : "—",
       answered: answers.goal !== null,
-      page: 1,
+      page: "goal",
     },
   ];
 
@@ -209,7 +272,7 @@ export function summaryRows(answers: WizardAnswers): SummaryRow[] {
       label: "Target weight",
       value: `${(answers.targetWeight ?? defaultTargetWeight(answers)).toFixed(1)} kg`,
       answered: true,
-      page: 1,
+      page: "goal",
     });
   }
 
