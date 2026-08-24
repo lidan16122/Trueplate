@@ -4,55 +4,9 @@ import pytest
 
 from app.config import settings
 from app.services import google_oauth
-from app.services.google_oauth import GoogleAuthError, GoogleIdentity
-from tests.helpers import age_tombstone
-
-API = "/api/v1/auth"
-
-ALICE = GoogleIdentity(
-    subject="google-subject-alice",
-    email="alice@example.com",
-    email_verified=True,
-    first_name="Alice",
-    last_name="Moreno",
-    picture="https://example.com/alice.jpg",
-)
-
-
-def google_payload(**overrides) -> dict:
-    """A claim set shaped like one Google's verifier returns."""
-    return {
-        "iss": "https://accounts.google.com",
-        "sub": ALICE.subject,
-        "email": ALICE.email,
-        "email_verified": True,
-        "given_name": ALICE.first_name,
-        "family_name": ALICE.last_name,
-        "picture": ALICE.picture,
-        **overrides,
-    }
-
-
-@pytest.fixture
-def google_ok(monkeypatch):
-    """Substitute Google's signing-cert fetch — the external dependency — only.
-
-    Patching `verify_google_credential` instead would stub *our* code, leaving
-    the issuer allowlist, the `email_verified` rejection, the missing-email
-    guard, and the address normalisation with no coverage at all.
-    """
-
-    def fake_verify_sync(credential: str) -> dict:
-        if credential == "bad-token":
-            raise ValueError("Token has wrong audience")
-        return google_payload()
-
-    monkeypatch.setattr(google_oauth, "_verify_sync", fake_verify_sync)
-    monkeypatch.setattr(settings, "google_client_id", "test-client-id.apps.googleusercontent.com")
-
-
-async def sign_in(client, credential: str = "good-token"):
-    return await client.post(f"{API}/google", json={"credential": credential})
+from app.services.google_oauth import GoogleAuthError
+from tests.helpers import ALICE, age_tombstone, google_payload, sign_in
+from tests.helpers import AUTH_API as API
 
 
 class TestGoogleSignIn:

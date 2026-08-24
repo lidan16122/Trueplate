@@ -33,6 +33,12 @@ class Goal(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "user_id",
             unique=True,
             postgresql_where=text("ends_on IS NULL"),
+            # The same predicate for SQLite, which the tests run on. Without it
+            # the index degrades to an unconditional one over user_id, and that
+            # is not a weaker version of this rule — it is a different one that
+            # forbids closed history, so superseding a goal raises where in
+            # production it succeeds.
+            sqlite_where=text("ends_on IS NULL"),
         ),
     )
 

@@ -6,18 +6,24 @@ from app.enums import ActivityLevel, GoalType, Sex, UnitPreference
 
 
 class OnboardingRequest(BaseModel):
-    """The six wizard answers, submitted once at the end.
+    """Everything the wizard collects, submitted once at the end.
 
     Bounds mirror the wizard's own steppers so a hand-crafted request cannot
     reach a target the UI would never let a user produce.
     """
 
+    # Prefilled from Google and confirmed on the wizard’s first page. Accepted
+    # here rather than left to a separate PATCH so a corrected name and the
+    # profile it belongs to commit together — a name that saved beside an
+    # onboarding that failed would rename a user still stuck in the wizard.
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
     age: int = Field(ge=14, le=120)
     sex: Sex
     height_cm: float = Field(gt=50, le=280)
     weight_kg: float = Field(gt=20, le=500)
     goal_type: GoalType
-    # Absent when maintaining — the wizard skips that step entirely.
+    # Absent when maintaining — the wizard hides that row entirely.
     target_weight_kg: float | None = Field(default=None, gt=20, le=500)
     rate_kg_per_week: float = Field(default=0.5, gt=0, le=1.5)
 

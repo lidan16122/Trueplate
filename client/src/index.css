@@ -59,6 +59,16 @@
   --color-line-control: #e0e0de; /* gram/number inputs and their steppers */
   --color-hairline-strong: #d8d8d6; /* the desktop photo drop-zone */
 
+  /* --- wizard --- */
+  /* Both carry a value the design uses only here, and both sit one shade from a
+     token that already exists — which is why they are named separately rather
+     than folded in. The design file is itself split on the first: its mobile
+     Today frame paints this track the #ececeb of --color-fill, where the wizard,
+     in both frames, paints #e6e6e4. Folding them together would mean a later
+     correction to a progress-bar track silently restyled the wizard too. */
+  --color-track: #e6e6e4; /* segmented step progress */
+  --color-divider: #efefed; /* the rule above the body rows */
+
   /* --- add-food surfaces --- */
   --color-icon-faint: #c4c4c2; /* delete glyphs, dashed-zone icon outlines */
   --color-panel: #fafafa; /* desktop chrome and side panels */
@@ -82,6 +92,7 @@
   --text-item: 15px; /* the name of one row in a list */
   --text-lead: 16px; /* emphasised body */
   --text-entry: 17px; /* an editable figure, and the number beside it */
+  --text-input: 21px; /* the mono figure inside a stepper */
   --text-title: 19px; /* card titles, brand mark */
   --text-figure: 34px; /* the big calorie number */
 

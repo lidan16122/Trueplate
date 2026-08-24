@@ -56,6 +56,10 @@ export interface Targets {
 }
 
 export interface OnboardingPayload {
+  /** Prefilled from Google and confirmed in the wizard, so a correction saves
+   *  in the same request as every other answer. */
+  first_name?: string;
+  last_name?: string;
   age: number;
   sex: Sex;
   height_cm: number;
