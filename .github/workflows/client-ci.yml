@@ -32,11 +32,11 @@ jobs:
         working-directory: client
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # node-version-file and cache-dependency-path are resolved against the repo
       # root, not the job's working-directory, so these two keep the client/ prefix.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: client/.nvmrc
           cache: npm
