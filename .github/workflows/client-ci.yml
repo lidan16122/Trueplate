@@ -1,0 +1,56 @@
+name: Client CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/workflows/client-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "client/**"
+      - ".github/workflows/client-ci.yml"
+
+# A force-push or a quick follow-up commit shouldn't leave the superseded run
+# burning a runner and reporting a stale result.
+concurrency:
+  group: client-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint, typecheck, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # There is no root package.json — the client is a standalone npm project
+        # inside the monorepo, so every npm command runs from here.
+        working-directory: client
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # node-version-file and cache-dependency-path are resolved against the repo
+      # root, not the job's working-directory, so these two keep the client/ prefix.
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: client/.nvmrc
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      # `ci`, not `install`: fails loudly if package.json and the lockfile have
+      # drifted, rather than silently resolving something newer than what was tested.
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      # No VITE_* values are set on purpose. Both (VITE_API_BASE_URL,
+      # VITE_GOOGLE_CLIENT_ID) are read with fallbacks, so the build succeeds
+      # without them — this is a compile smoke check, not a deployable artifact.
+      - run: npm run build

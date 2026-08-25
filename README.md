@@ -29,7 +29,8 @@ project — the alternative is coordinating version bumps across two repos for e
 ## Quick start
 
 Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/),
-[uv](https://docs.astral.sh/uv/), Node 20+.
+[uv](https://docs.astral.sh/uv/), and the Node version in `client/.nvmrc` — CI reads that
+same file, so it is the one that has to match.
 
 ```bash
 cp .env.example .env
