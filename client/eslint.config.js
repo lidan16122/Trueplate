@@ -24,6 +24,11 @@ export default tseslint.config(
       // reading last render's state — is the hardest class of bug here to spot
       // by reading.
       "react-hooks/exhaustive-deps": "error",
+      // The severity split below is about *reading* the output, not about what
+      // blocks a merge: `npm run lint` passes --max-warnings 0, so CI stops on
+      // this rule exactly as hard as on the one above. Warn keeps it legible as
+      // the lesser problem — a fast-refresh nicety rather than a live bug — while
+      // still holding the line at zero.
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },

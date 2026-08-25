@@ -1,5 +1,10 @@
 name: Client CI
 
+# Scoped to the client so the server's own workflow can sit beside this one.
+# Know before making this a required check in branch protection: a path-filtered
+# workflow does not report at all on a PR it skips, so requiring it would strand
+# every server-only PR waiting on a check that will never arrive. Either leave it
+# non-required, or drop the filters and let it pass cheaply on everything.
 on:
   push:
     branches: [main]
@@ -25,6 +30,11 @@ jobs:
   checks:
     name: Lint, typecheck, build
     runs-on: ubuntu-latest
+    # These three gates finish in well under a minute. Without a ceiling a hung
+    # npm ci — a registry that accepts the connection and then stops talking —
+    # inherits GitHub's 360-minute default and presents as a stuck check rather
+    # than a failed one, which is the harder thing to diagnose.
+    timeout-minutes: 10
     defaults:
       run:
         # There is no root package.json — the client is a standalone npm project
@@ -34,6 +44,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The version itself lives in client/.nvmrc so CI and a local nvm read one
+      # file and cannot drift. It is 24 because Vite 7 floors at ^20.19 || >=22.12
+      # and 24 is current LTS — a reason .nvmrc has no way to record, since the
+      # format is a bare version string with nowhere to put a comment.
+      #
+      # One version, not a matrix: this is an application with a single deploy
+      # target, so a second Node in the matrix could only manufacture a failure
+      # nobody would act on.
+      #
       # node-version-file and cache-dependency-path are resolved against the repo
       # root, not the job's working-directory, so these two keep the client/ prefix.
       - uses: actions/setup-node@v5
@@ -46,8 +65,14 @@ jobs:
       # drifted, rather than silently resolving something newer than what was tested.
       - run: npm ci
 
+      # Ordered cheapest-and-most-specific first, so the step that fails is the
+      # step that names the problem.
       - run: npm run lint
 
+      # `npm run build` runs `tsc -b` itself, so this is the second type pass, and
+      # build mode caches nothing here — a noEmit project is never "up to date",
+      # having no output to compare against. The few seconds are deliberate: they
+      # buy a failure that reads as "types broke" rather than "build broke".
       - run: npm run typecheck
 
       # No VITE_* values are set on purpose. Both (VITE_API_BASE_URL,

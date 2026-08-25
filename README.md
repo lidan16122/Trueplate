@@ -188,8 +188,13 @@ lupa, and the identity tables run on in-memory SQLite. The rotation, theft-detec
 concurrency behaviour is genuinely exercised, not mocked.
 
 ```bash
-cd client && npm run typecheck && npm run build
+cd client && npm run lint && npm run typecheck && npm run build
 ```
+
+The client has no test suite yet; these three checks are what stands in for one. They are
+also exactly what `.github/workflows/client-ci.yml` runs on every PR, in this order — so a
+green run here means a green run there, and lint failing locally costs you a round trip
+rather than a red check.
 
 ---
 
