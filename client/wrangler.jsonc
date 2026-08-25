@@ -1,0 +1,40 @@
+// Cloudflare Workers deployment for the built client.
+//
+// Assets-only: there is deliberately no `main` entrypoint, because there is no
+// request this Worker needs to handle in code yet. Cloudflare serves ./dist
+// straight from the edge.
+//
+// WHEN THE BACKEND DEPLOYS, this file is where same-origin gets restored. The
+// server sets its auth cookies SameSite=lax, which the browser refuses to send
+// on a cross-site fetch — so a client here calling an API on another domain
+// authenticates once and then silently loses the session on every request after.
+// Local development never sees this because the Vite proxy makes /api
+// same-origin (see server.proxy in vite.config.ts).
+//
+// The fix mirrors that proxy rather than configuring around it: add a Worker
+// script and hand it /api, leaving everything else on the asset path.
+//
+//   "main": "./src/worker.ts",
+//   "assets": {
+//     ...
+//     "run_worker_first": ["/api/*"]
+//   }
+//
+// with the script forwarding /api/* to the backend origin. The alternative —
+// SameSite=none plus a CORS allowlist — trades a config change for a weaker
+// cookie and a dependency on third-party cookie support that browsers are
+// actively removing.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "trueplate",
+  // Pins the Workers runtime behaviour to how it worked on this date, so a
+  // future platform change cannot alter the deployment without a deliberate bump.
+  "compatibility_date": "2026-08-25",
+  "assets": {
+    "directory": "./dist/",
+    // A client-side router owns every path, so an unmatched request is a route
+    // React Router should resolve, not a missing file. Without this, a hard
+    // refresh on /progress returns a 404 from the edge and the app never boots.
+    "not_found_handling": "single-page-application"
+  }
+}

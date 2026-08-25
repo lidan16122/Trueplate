@@ -1,4 +1,4 @@
-name: Client CI
+name: Client CI/CD
 
 # Scoped to the client so the server's own workflow can sit beside this one.
 # Know before making this a required check in branch protection: a path-filtered
@@ -75,7 +75,49 @@ jobs:
       # buy a failure that reads as "types broke" rather than "build broke".
       - run: npm run typecheck
 
-      # No VITE_* values are set on purpose. Both (VITE_API_BASE_URL,
-      # VITE_GOOGLE_CLIENT_ID) are read with fallbacks, so the build succeeds
-      # without them — this is a compile smoke check, not a deployable artifact.
+      # VITE_API_BASE_URL is deliberately unset, which resolves to "" and leaves
+      # the client calling /api/v1 on its own origin. That is the only value that
+      # works once the Worker proxies /api — an absolute URL to another domain
+      # would put the auth cookies cross-site, which SameSite=lax forbids.
+      #
+      # VITE_GOOGLE_CLIENT_ID is a repository *variable*, not a secret: Vite
+      # inlines every VITE_* into the public bundle, so a value that cannot
+      # survive being public cannot go here. Google client IDs are public by
+      # design. Unset is survivable — sign-in renders "not configured" rather
+      # than failing the build.
       - run: npm run build
+        env:
+          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
+
+      # Deploy ships these exact bytes rather than rebuilding, so what reaches
+      # Cloudflare is what the three gates above actually passed.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-dist
+          path: client/dist
+          retention-days: 7
+
+  deploy:
+    name: Deploy to Cloudflare
+    # Only after the gates pass, and never from a pull request — a PR can come
+    # from a fork, and deploying one would let an outside branch publish to the
+    # production origin.
+    needs: checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # wrangler.jsonc is not in the build output, so the config still has to
+      # come from the repo.
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: client-dist
+          path: client/dist
+
+      - uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: client
