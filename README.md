@@ -198,6 +198,42 @@ rather than a red check.
 
 ---
 
+## Deploying
+
+The client goes to Cloudflare Workers (`client/wrangler.jsonc`); the API goes to Render as a
+Docker image (`render.yaml` at the repo root, `server/Dockerfile`). Both deploy on a push to
+`main` only, and only once CI is green — Cloudflare from a GitHub Actions job, Render through
+`autoDeployTrigger: checksPass`.
+
+The API runs under Docker rather than Render's native Python runtime for one reason: `pyzbar`
+loads `libzbar.so.0` at import, `app.main` reaches it through the router, and Render's native
+runtime has no `apt` step. Without that system package the app does not fail to scan a
+barcode — it fails to boot.
+
+Production start command, for reference — no `--reload`, and `--host 0.0.0.0` because uvicorn
+otherwise binds `127.0.0.1` and nothing outside the container can reach it:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}
+```
+
+**Migrations are run by hand**, not by the deploy. Render's free tier has no pre-deploy
+command, and putting `alembic upgrade head` in front of uvicorn would turn an unreachable
+database from a degraded service into a crash loop. Neon is reachable from anywhere, so run
+them from your machine — note `alembic/env.py` imports `app.config`, so it needs
+`JWT_SECRET_KEY` set as well as `DATABASE_URL`:
+
+```bash
+cd server && uv run alembic upgrade head
+```
+
+> `DATABASE_URL` must use the `postgresql+psycopg://` scheme. Neon and Render both hand out
+> `postgresql://`, and pasting that unchanged raises nothing — SQLAlchemy quietly selects the
+> sync driver and every request blocks the event loop. `GET /health/ready` on the deployed
+> service is the check: it reports `database: "ok"` only when the async driver connected.
+
+---
+
 ## Project layout
 
 ```
