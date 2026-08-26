@@ -15,3 +15,9 @@ __pycache__/
 
 # Not reachable from app/ — a serving process imports none of it.
 tests/
+
+# Same reasoning as tests/, and one step more pointed: this file hardcodes a
+# JWT_SECRET_KEY so the suite can collect without a .env. Nothing outside pytest
+# imports it, but a published signing key does not belong in an image whose
+# security rests on that variable being secret.
+conftest.py

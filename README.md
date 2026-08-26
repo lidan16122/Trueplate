@@ -220,11 +220,13 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}
 **Migrations are run by hand**, not by the deploy. Render's free tier has no pre-deploy
 command, and putting `alembic upgrade head` in front of uvicorn would turn an unreachable
 database from a degraded service into a crash loop. Neon is reachable from anywhere, so run
-them from your machine — note `alembic/env.py` imports `app.config`, so it needs
-`JWT_SECRET_KEY` set as well as `DATABASE_URL`:
+them from your machine — but **pass the production URL explicitly**. The bare command is the
+one in Quick start, and it migrates whatever your local environment points at, which is not
+Neon. `alembic/env.py` imports `app.config`, so it needs `JWT_SECRET_KEY` too — any value
+over 32 characters will do, since migrations never sign a token:
 
 ```bash
-cd server && uv run alembic upgrade head
+cd server && DATABASE_URL='postgresql+psycopg://…neon…?sslmode=require' JWT_SECRET_KEY='any-32-plus-character-string-here' uv run alembic upgrade head
 ```
 
 > `DATABASE_URL` must use the `postgresql+psycopg://` scheme. Neon and Render both hand out

@@ -75,3 +75,43 @@ jobs:
       # else in app/config.py is defaulted, and a missing API key degrades to a 503
       # rather than raising.
       - run: uv run pytest
+
+  image:
+    name: Build and boot the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Independent of the checks job: this proves the deployable artifact, not the
+    # source. Render builds this Dockerfile itself, and nothing else in the repo
+    # ever builds it — so without this job the first build of any change to it
+    # happens in production.
+    steps:
+      - uses: actions/checkout@v5
+
+      # Catches, in one step, everything that only goes wrong on Linux: whether
+      # libzbar0 installs, and whether the cp314 wheels resolve without a compiler
+      # in a slim image.
+      - name: Build
+        run: docker build -t trueplate-api server
+
+      # The boot test is the point. pyzbar loads libzbar.so.0 at import and the
+      # router pulls it in, so a missing system package fails here before the port
+      # binds — not at the barcode endpoint. Deliberately given no DATABASE_URL or
+      # REDIS_URL: the app is supposed to start and serve regardless, connecting
+      # lazily, and this pins that. JWT_SECRET_KEY is the one setting it refuses to
+      # boot without.
+      - name: Boot with no database configured
+        run: |
+          docker run -d --name api -p 10000:10000 \
+            -e JWT_SECRET_KEY=ci-smoke-test-key-of-at-least-32-characters \
+            trueplate-api
+          for _ in $(seq 1 30); do
+            if curl -fsS localhost:10000/health; then echo; echo "served /health"; exit 0; fi
+            sleep 2
+          done
+          echo "never served /health within 60s"
+          docker logs api
+          exit 1
+
+      - name: Container logs
+        if: always()
+        run: docker logs api 2>&1 | tail -20 || true
