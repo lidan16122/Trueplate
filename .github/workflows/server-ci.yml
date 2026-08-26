@@ -52,7 +52,10 @@ jobs:
       - name: Install libzbar (pyzbar's native dependency)
         run: sudo apt-get update && sudo apt-get install -y libzbar0
 
-      - uses: astral-sh/setup-uv@v10
+      # Pinned to an exact patch, unlike every other action here, because
+      # astral-sh publishes floating major tags only up to v7 — there is no v8,
+      # v9 or v10 alias to track, and `@v10` fails to resolve at all.
+      - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
           cache-dependency-glob: server/uv.lock
