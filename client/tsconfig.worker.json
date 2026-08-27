@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.worker.tsbuildinfo",
+    "target": "ES2023",
+    // WebWorker rather than DOM: a Worker has no document and no window, and
+    // borrowing the browser's lib would let a reference to either typecheck and
+    // then fail at the edge. Everything this Worker touches — fetch, Request,
+    // Response, Headers, URL, AbortSignal — is in the shared web-standard subset,
+    // so no Cloudflare-specific types package is needed for it.
+    "lib": ["ES2023", "WebWorker"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noUncheckedSideEffectImports": true,
+    // Empty, not omitted: an omitted `types` pulls in every @types package in
+    // node_modules, which would put Node and DOM globals back in scope.
+    "types": []
+  },
+  "include": ["worker"]
+}
