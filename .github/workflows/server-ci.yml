@@ -1,0 +1,117 @@
+name: Server CI
+
+# Scoped to the server so the client's workflow can sit beside this one. Know
+# before making this a required check in branch protection: a path-filtered
+# workflow does not report at all on a PR it skips, so requiring it would strand
+# every client-only PR waiting on a check that will never arrive.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/server-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/**"
+      - ".github/workflows/server-ci.yml"
+
+# A force-push or a quick follow-up commit shouldn't leave the superseded run
+# burning a runner and reporting a stale result.
+concurrency:
+  group: server-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Lint and test
+    runs-on: ubuntu-latest
+    # The suite runs in seconds; the ceiling exists so a hung dependency install
+    # fails instead of inheriting GitHub's 360-minute default and presenting as a
+    # stuck check, which is the harder thing to diagnose.
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      # Must come first: every later step runs in ./server, which does not exist
+      # until the checkout lands.
+      - uses: actions/checkout@v5
+
+      # Not optional, and not obvious from any test file. app/services/barcode.py
+      # imports pyzbar at module scope, app.main reaches it through the router, and
+      # tests/conftest.py imports app.main — so pyzbar sits on the import path of
+      # every single test. The Linux wheel is a 32 KB ctypes shim with no library
+      # bundled; the Windows wheels carry the DLLs, which is why this never surfaces
+      # locally. Without this package the suite fails at *collection* and zero tests
+      # run — a far more confusing failure than a red test.
+      - name: Install libzbar (pyzbar's native dependency)
+        run: sudo apt-get update && sudo apt-get install -y libzbar0
+
+      # Pinned to an exact patch, unlike every other action here, because
+      # astral-sh publishes floating major tags only up to v7 — there is no v8,
+      # v9 or v10 alias to track, and `@v10` fails to resolve at all.
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+          cache-dependency-glob: server/uv.lock
+
+      # `--locked` is uv's equivalent of `npm ci`: it fails if pyproject.toml and
+      # uv.lock have drifted, rather than silently resolving something newer than
+      # what was tested. The interpreter comes from server/.python-version, which
+      # uv reads natively and downloads if the runner lacks it.
+      - run: uv sync --locked
+
+      - run: uv run ruff check .
+
+      # No env vars and no .env file. server/conftest.py sets the one required
+      # setting — JWT_SECRET_KEY, which deliberately has no default so a deploy
+      # that forgets it fails to boot — via os.environ.setdefault at rootdir import
+      # time, precisely so a fresh clone or a CI job can collect at all. Everything
+      # else in app/config.py is defaulted, and a missing API key degrades to a 503
+      # rather than raising.
+      - run: uv run pytest
+
+  image:
+    name: Build and boot the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Independent of the checks job: this proves the deployable artifact, not the
+    # source. Render builds this Dockerfile itself, and nothing else in the repo
+    # ever builds it — so without this job the first build of any change to it
+    # happens in production.
+    steps:
+      - uses: actions/checkout@v5
+
+      # Catches, in one step, everything that only goes wrong on Linux: whether
+      # libzbar0 installs, and whether the cp314 wheels resolve without a compiler
+      # in a slim image.
+      - name: Build
+        run: docker build -t trueplate-api server
+
+      # The boot test is the point. pyzbar loads libzbar.so.0 at import and the
+      # router pulls it in, so a missing system package fails here before the port
+      # binds — not at the barcode endpoint. Deliberately given no DATABASE_URL or
+      # REDIS_URL: the app is supposed to start and serve regardless, connecting
+      # lazily, and this pins that. JWT_SECRET_KEY is the one setting it refuses to
+      # boot without.
+      - name: Boot with no database configured
+        run: |
+          docker run -d --name api -p 10000:10000 \
+            -e JWT_SECRET_KEY=ci-smoke-test-key-of-at-least-32-characters \
+            trueplate-api
+          for _ in $(seq 1 30); do
+            if curl -fsS localhost:10000/health; then echo; echo "served /health"; exit 0; fi
+            sleep 2
+          done
+          echo "never served /health within 60s"
+          docker logs api
+          exit 1
+
+      - name: Container logs
+        if: always()
+        run: docker logs api 2>&1 | tail -20 || true

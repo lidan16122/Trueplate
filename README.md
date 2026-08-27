@@ -29,7 +29,8 @@ project — the alternative is coordinating version bumps across two repos for e
 ## Quick start
 
 Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/),
-[uv](https://docs.astral.sh/uv/), Node 20+.
+[uv](https://docs.astral.sh/uv/), and the Node version in `client/.nvmrc` — CI reads that
+same file, so it is the one that has to match.
 
 ```bash
 cp .env.example .env
@@ -187,8 +188,51 @@ lupa, and the identity tables run on in-memory SQLite. The rotation, theft-detec
 concurrency behaviour is genuinely exercised, not mocked.
 
 ```bash
-cd client && npm run typecheck && npm run build
+cd client && npm run lint && npm run typecheck && npm run build
 ```
+
+The client has no test suite yet; these three checks are what stands in for one. They are
+also exactly what `.github/workflows/client-ci.yml` runs on every PR, in this order — so a
+green run here means a green run there, and lint failing locally costs you a round trip
+rather than a red check.
+
+---
+
+## Deploying
+
+The client goes to Cloudflare Workers (`client/wrangler.jsonc`); the API goes to Render as a
+Docker image (`render.yaml` at the repo root, `server/Dockerfile`). Both deploy on a push to
+`main` only, and only once CI is green — Cloudflare from a GitHub Actions job, Render through
+`autoDeployTrigger: checksPass`.
+
+The API runs under Docker rather than Render's native Python runtime for one reason: `pyzbar`
+loads `libzbar.so.0` at import, `app.main` reaches it through the router, and Render's native
+runtime has no `apt` step. Without that system package the app does not fail to scan a
+barcode — it fails to boot.
+
+Production start command, for reference — no `--reload`, and `--host 0.0.0.0` because uvicorn
+otherwise binds `127.0.0.1` and nothing outside the container can reach it:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}
+```
+
+**Migrations are run by hand**, not by the deploy. Render's free tier has no pre-deploy
+command, and putting `alembic upgrade head` in front of uvicorn would turn an unreachable
+database from a degraded service into a crash loop. Neon is reachable from anywhere, so run
+them from your machine — but **pass the production URL explicitly**. The bare command is the
+one in Quick start, and it migrates whatever your local environment points at, which is not
+Neon. `alembic/env.py` imports `app.config`, so it needs `JWT_SECRET_KEY` too — any value
+over 32 characters will do, since migrations never sign a token:
+
+```bash
+cd server && DATABASE_URL='postgresql+psycopg://…neon…?sslmode=require' JWT_SECRET_KEY='any-32-plus-character-string-here' uv run alembic upgrade head
+```
+
+> `DATABASE_URL` must use the `postgresql+psycopg://` scheme. Neon and Render both hand out
+> `postgresql://`, and pasting that unchanged raises nothing — SQLAlchemy quietly selects the
+> sync driver and every request blocks the event loop. `GET /health/ready` on the deployed
+> service is the check: it reports `database: "ok"` only when the async driver connected.
 
 ---
 
