@@ -28,6 +28,44 @@ interface Env {
   //
   //   cd client && npx wrangler secret put API_ORIGIN
   API_ORIGIN: string;
+  // Optional comma-separated allowlist of client IPs. Unset means open to
+  // everyone, which is deliberate: a missing secret must not be able to lock
+  // the owner out of their own site, and this is a soft gate for a site not yet
+  // meant to be public — not a security boundary.
+  //
+  //   cd client && npx wrangler secret put ALLOWED_IPS
+  ALLOWED_IPS?: string;
+}
+
+/**
+ * Null when the request may proceed, a 403 when it may not.
+ *
+ * `CF-Connecting-IP` is set by Cloudflare's edge before this Worker runs, so
+ * unlike an origin sitting behind a proxy — where the same header is whatever
+ * the caller typed — it cannot be forged from outside.
+ *
+ * Note what this does *not* cover: the API on Render stays directly reachable
+ * at its own hostname, so restricting the Worker restricts the site, not the
+ * data behind it.
+ */
+function denyByIp(request: Request, env: Env, wantsJson: boolean): Response | null {
+  const allowed = (env.ALLOWED_IPS ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  if (allowed.length === 0) return null;
+
+  const ip = request.headers.get("cf-connecting-ip") ?? "";
+  if (allowed.includes(ip)) return null;
+
+  // The API path answers in JSON because api.ts parses every response that way;
+  // a page request gets something a person can read in a browser.
+  return wantsJson
+    ? errorResponse(403, "Not available from this network")
+    : new Response("Not available from this network.\n", {
+        status: 403,
+        headers: { "content-type": "text/plain; charset=utf-8" },
+      });
 }
 
 // Render's free tier sleeps after 15 minutes and takes around 50 seconds to wake,
@@ -51,11 +89,16 @@ function errorResponse(status: number, detail: string): Response {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const isApi = url.pathname.startsWith("/api/");
 
-    // `run_worker_first` should mean only /api/* ever reaches this Worker, but
-    // the asset path is the correct answer for anything else that does — a
-    // Worker that 404s the app because a rule changed shape is a bad failure.
-    if (!url.pathname.startsWith("/api/")) {
+    // Before anything else, including the assets. This is why wrangler.jsonc
+    // sets `run_worker_first: true` rather than scoping the Worker to /api —
+    // scoped, every page would be served straight off the asset path without
+    // this ever running, and the gate would cover the API and nothing else.
+    const denied = denyByIp(request, env, isApi);
+    if (denied) return denied;
+
+    if (!isApi) {
       return env.ASSETS.fetch(request);
     }
 
