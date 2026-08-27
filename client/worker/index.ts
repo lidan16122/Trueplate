@@ -18,11 +18,25 @@
  * default and unused, exactly as `app/config.py` says it is in development.
  */
 
-const API_ORIGIN = "https://trueplate-api.onrender.com";
-
 interface Env {
   // Declared by `assets.binding` in wrangler.jsonc.
   ASSETS: { fetch(request: Request): Promise<Response> };
+  // The API's origin, scheme and host only — no path. A Cloudflare
+  // secret rather than a `vars` entry: `vars` are declared in wrangler.jsonc and
+  // would live in the repo, and plain variables set in the dashboard are wiped
+  // by the next `wrangler deploy`. Secrets survive one.
+  //
+  //   cd client && npx wrangler secret put API_ORIGIN
+  API_ORIGIN: string;
+}
+
+/** JSON, because api.ts parses every response as JSON — an HTML or bare-text
+ *  error surfaces to the user as a parse failure that names nothing. */
+function configError(detail: string): Response {
+  return new Response(JSON.stringify({ detail }), {
+    status: 500,
+    headers: { "content-type": "application/json" },
+  });
 }
 
 export default {
@@ -36,9 +50,22 @@ export default {
       return env.ASSETS.fetch(request);
     }
 
-    // Path and query only. Rebuilding the URL against API_ORIGIN is what swaps
-    // the host; carrying anything else across would defeat that.
-    const target = new URL(url.pathname + url.search, API_ORIGIN);
+    // Fail loudly on a missing or malformed origin. The tempting alternative —
+    // falling through to the assets — returns the SPA's index.html with a 200,
+    // which the client then tries to parse as JSON. That is the single most
+    // confusing failure this file could produce, so it is the one ruled out.
+    if (!env.API_ORIGIN) {
+      return configError("API_ORIGIN is not configured on the Worker");
+    }
+
+    let target: URL;
+    try {
+      // Path and query only. Rebuilding the URL against API_ORIGIN is what swaps
+      // the host; carrying anything else across would defeat that.
+      target = new URL(url.pathname + url.search, env.API_ORIGIN);
+    } catch {
+      return configError("API_ORIGIN is not a valid origin");
+    }
 
     // `redirect: "manual"` so a redirect from the API reaches the browser as a
     // redirect. Followed here, the Location would resolve against the API origin
