@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const GSI_SRC = "https://accounts.google.com/gsi/client";
 
@@ -49,21 +49,30 @@ function loadGsi(): Promise<void> {
 interface Props {
   onCredential: (credential: string) => void | Promise<void>;
   disabled?: boolean;
-  children: React.ReactNode;
-  className?: string;
 }
 
 /**
- * A Google sign-in trigger wearing the design's own button.
+ * Google's own sign-in button, rendered the way Google documents it.
  *
- * Google's `renderButton` produces an iframe that cannot be restyled, which
- * would put a stock Google button in the middle of a carefully specified
- * layout. Instead the real button is rendered off-screen and clicked
- * programmatically, so the visible control is ours and the credential flow is
- * still Google's.
+ * The design would rather this wore the app's button, and an earlier version
+ * tried: Google's button was rendered off-screen and a click forwarded to it
+ * from a styled one. That broke sign-in in production with no visible symptom.
+ * `HTMLElement.click()` produces an event carrying `isTrusted: false`, browsers
+ * gate `window.open` on genuine user activation, and the popup was refused —
+ * reported to the console and nowhere else.
+ *
+ * The deeper problem is that there is no supported way to do it. Google's API
+ * offers `renderButton` and nothing else: `prompt()` drives One Tap only, and
+ * `click_listener` observes a click without being able to start the flow. Any
+ * custom button is therefore a workaround resting on Google's DOM shape and on
+ * browser activation rules, neither of which is a contract.
+ *
+ * So this takes the supported path and accepts Google's styling. `filled_black`
+ * and `continue_with` are the closest of the documented options to the design's
+ * dark button — not the same, and that is the trade being made.
  */
-export function GoogleSignInButton({ onCredential, disabled, children, className }: Props) {
-  const hiddenRef = useRef<HTMLDivElement>(null);
+export function GoogleSignInButton({ onCredential, disabled }: Props) {
+  const hostRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
@@ -78,15 +87,22 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
 
     loadGsi()
       .then(() => {
-        if (cancelled || !window.google || !hiddenRef.current) return;
+        const host = hostRef.current;
+        if (cancelled || !window.google || !host) return;
 
         window.google.accounts.id.initialize({
           client_id: clientId,
           callback: (response) => void onCredential(response.credential),
           cancel_on_tap_outside: false,
         });
-        window.google.accounts.id.renderButton(hiddenRef.current, {
+        // No `width`: left to size itself, which is the one configuration that
+        // cannot disagree with the container. Google caps it at 400px anyway,
+        // so a full-width button on a wide viewport is not on offer.
+        window.google.accounts.id.renderButton(host, {
           type: "standard",
+          theme: "filled_black",
+          text: "continue_with",
+          shape: "rectangular",
           size: "large",
         });
         setReady(true);
@@ -100,30 +116,15 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
     };
   }, [clientId, onCredential]);
 
-  const handleClick = useCallback(() => {
-    // Click the real (hidden) Google button so the credential flow is
-    // untouched — no popup blocked, no reimplemented OAuth.
-    const realButton = hiddenRef.current?.querySelector<HTMLElement>('div[role="button"]');
-    realButton?.click();
-  }, []);
-
   return (
     <>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={disabled || !ready}
-        className={className}
-      >
-        {children}
-      </button>
-
-      {/* Kept in the layout but visually hidden: display:none stops GSI
-          rendering the button at all, which leaves nothing to click. */}
+      {/* Google's button has no disabled state, so an in-flight sign-in is
+          shown by dimming it and taking it out of reach. */}
       <div
-        ref={hiddenRef}
-        aria-hidden
-        className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
+        ref={hostRef}
+        className={
+          disabled || !ready ? "pointer-events-none opacity-60" : undefined
+        }
       />
 
       {error && <p className="text-center text-label text-warn">{error}</p>}

@@ -34,16 +34,7 @@ export function SignIn() {
   );
 
   const googleButton = (
-    <GoogleSignInButton
-      onCredential={handleCredential}
-      disabled={busy}
-      className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-ink text-lead font-semibold text-white transition-colors hover:bg-accent disabled:opacity-60 md:h-[52px] md:w-auto md:px-[26px]"
-    >
-      <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-white text-caption font-bold text-ink">
-        G
-      </span>
-      {busy ? "Signing in…" : "Continue with Google"}
-    </GoogleSignInButton>
+    <GoogleSignInButton onCredential={handleCredential} disabled={busy} />
   );
 
   return (
