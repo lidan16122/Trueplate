@@ -33,8 +33,20 @@ export function SignIn() {
     [signIn],
   );
 
+  // Values from the design canvas: 56px tall and full width on mobile at a 16px
+  // radius, 52px and content-width on desktop at 14px. The radius genuinely
+  // differs between the two, which is why it is not a single token.
   const googleButton = (
-    <GoogleSignInButton onCredential={handleCredential} disabled={busy} />
+    <GoogleSignInButton
+      onCredential={handleCredential}
+      disabled={busy}
+      className="flex h-14 w-full items-center justify-center gap-3 rounded-lg bg-ink text-lead font-semibold text-white transition-colors hover:bg-accent disabled:opacity-60 md:h-[52px] md:w-auto md:rounded-[14px] md:px-[26px]"
+    >
+      <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-white text-caption font-bold text-ink">
+        G
+      </span>
+      {busy ? "Signing in…" : "Continue with Google"}
+    </GoogleSignInButton>
   );
 
   return (
