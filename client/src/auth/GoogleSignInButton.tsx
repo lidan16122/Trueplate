@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const GSI_SRC = "https://accounts.google.com/gsi/client";
+
+/** Google's own cap on `renderButton`'s width. Anything wider is stretched. */
+const GSI_MAX_WIDTH = 400;
+
+/** Used only when the container cannot be measured, so the button still works. */
+const GSI_FALLBACK_WIDTH = 320;
 
 interface CredentialResponse {
   credential: string;
@@ -58,15 +64,41 @@ interface Props {
  *
  * Google's `renderButton` produces an iframe that cannot be restyled, which
  * would put a stock Google button in the middle of a carefully specified
- * layout. Instead the real button is rendered off-screen and clicked
- * programmatically, so the visible control is ours and the credential flow is
- * still Google's.
+ * layout. So the real button is laid *invisibly over* ours: the user sees our
+ * design and clicks Google's actual control.
+ *
+ * The obvious alternative — render Google's button off-screen and forward a
+ * click to it — is what this used to do, and it broke sign-in in production
+ * with no visible symptom. `HTMLElement.click()` dispatches an event carrying
+ * `isTrusted: false`, and browsers gate `window.open` on genuine user
+ * activation, so the popup was blocked and GSI reported it to the console and
+ * nowhere else. An overlay keeps the gesture real, which is the only thing that
+ * reliably satisfies a popup blocker.
  */
 export function GoogleSignInButton({ onCredential, disabled, children, className }: Props) {
-  const hiddenRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Google renders at a fixed pixel width, so the overlay has to be told how
+  // wide our button actually is — which only the layout knows, and which
+  // changes at the md breakpoint.
+  const [width, setWidth] = useState(0);
   const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    // Measured directly *and* observed. The observer alone is not enough: there
+    // are environments where it never fires, and a width stuck at zero would be
+    // the difference between a working sign-in button and a dead one — which is
+    // exactly the class of silent failure this component is being fixed for.
+    const measure = () => setWidth(wrapper.getBoundingClientRect().width);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!clientId) {
@@ -78,16 +110,24 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
 
     loadGsi()
       .then(() => {
-        if (cancelled || !window.google || !hiddenRef.current) return;
+        const overlay = overlayRef.current;
+        if (cancelled || !window.google || !overlay) return;
 
         window.google.accounts.id.initialize({
           client_id: clientId,
           callback: (response) => void onCredential(response.credential),
           cancel_on_tap_outside: false,
         });
-        window.google.accounts.id.renderButton(hiddenRef.current, {
+        // Re-rendered whenever the width changes; GSI appends rather than
+        // replaces, so the previous button has to go or they stack.
+        overlay.replaceChildren();
+        window.google.accounts.id.renderButton(overlay, {
           type: "standard",
           size: "large",
+          // Falls back rather than skipping. An unmeasured width renders a
+          // button that is merely the wrong size — still invisible, still
+          // clickable — where skipping renders nothing to click at all.
+          width: Math.min(Math.round(width) || GSI_FALLBACK_WIDTH, GSI_MAX_WIDTH),
         });
         setReady(true);
       })
@@ -98,33 +138,38 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
     return () => {
       cancelled = true;
     };
-  }, [clientId, onCredential]);
-
-  const handleClick = useCallback(() => {
-    // Click the real (hidden) Google button so the credential flow is
-    // untouched — no popup blocked, no reimplemented OAuth.
-    const realButton = hiddenRef.current?.querySelector<HTMLElement>('div[role="button"]');
-    realButton?.click();
-  }, []);
+  }, [clientId, onCredential, width]);
 
   return (
     <>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={disabled || !ready}
-        className={className}
-      >
-        {children}
-      </button>
+      <div ref={wrapperRef} className="group relative w-full md:w-auto">
+        {/* Presentational. The real control is the Google button above it, so
+            this is hidden from assistive tech and taken out of the tab order —
+            two buttons announcing the same action is worse than one. */}
+        <button
+          type="button"
+          aria-hidden
+          tabIndex={-1}
+          disabled={disabled || !ready}
+          className={`${className ?? ""} group-focus-within:ring-2 group-focus-within:ring-accent`}
+        >
+          {children}
+        </button>
 
-      {/* Kept in the layout but visually hidden: display:none stops GSI
-          rendering the button at all, which leaves nothing to click. */}
-      <div
-        ref={hiddenRef}
-        aria-hidden
-        className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
-      />
+        {/* Google's button, invisible but genuinely clicked. `scaleX` covers a
+            container wider than Google's 400px ceiling — the distortion cannot
+            be seen at zero opacity, and a dead strip at the edge of a button
+            that looks whole would be far worse. */}
+        <div
+          ref={overlayRef}
+          className={`absolute inset-0 origin-left overflow-hidden opacity-0 ${
+            disabled || !ready ? "pointer-events-none" : ""
+          }`}
+          style={
+            width > GSI_MAX_WIDTH ? { transform: `scaleX(${width / GSI_MAX_WIDTH})` } : undefined
+          }
+        />
+      </div>
 
       {error && <p className="text-center text-label text-warn">{error}</p>}
     </>
