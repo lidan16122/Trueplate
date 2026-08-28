@@ -95,9 +95,10 @@ export function GoogleSignInButton({ onCredential, disabled }: Props) {
           callback: (response) => void onCredential(response.credential),
           cancel_on_tap_outside: false,
         });
-        // No `width`: left to size itself, which is the one configuration that
-        // cannot disagree with the container. Google caps it at 400px anyway,
-        // so a full-width button on a wide viewport is not on offer.
+        // `filled_black` and `continue_with` get the markup closest to the
+        // design before CSS touches it, so the button never flashes as a white
+        // Google button on the way to being a dark one. No `width`: Google caps
+        // it at 400px, and `.gsi-themed` overrides the width anyway.
         window.google.accounts.id.renderButton(host, {
           type: "standard",
           theme: "filled_black",
@@ -118,13 +119,14 @@ export function GoogleSignInButton({ onCredential, disabled }: Props) {
 
   return (
     <>
-      {/* Google's button has no disabled state, so an in-flight sign-in is
-          shown by dimming it and taking it out of reach. */}
+      {/* `gsi-themed` is where the design is applied — see index.css. Google's
+          button has no disabled state, so an in-flight sign-in is shown by
+          dimming it and taking it out of reach. */}
       <div
         ref={hostRef}
-        className={
-          disabled || !ready ? "pointer-events-none opacity-60" : undefined
-        }
+        className={`gsi-themed w-full${
+          disabled || !ready ? " pointer-events-none opacity-60" : ""
+        }`}
       />
 
       {error && <p className="text-center text-label text-warn">{error}</p>}
