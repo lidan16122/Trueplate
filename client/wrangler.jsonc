@@ -15,12 +15,10 @@
     // React Router should resolve, not a missing file. Without this, a hard
     // refresh on /progress returns a 404 from the edge and the app never boots.
     "not_found_handling": "single-page-application",
-    // Every request, not just /api. Scoped to ["/api/*"] the Worker would be
-    // skipped entirely for page loads — assets would be served straight from the
-    // edge — and the IP allowlist in worker/index.ts would then guard the API
-    // while leaving the site itself open to anyone. Running first on everything
-    // is what makes that gate mean something.
-    "run_worker_first": true,
+    // Only /api reaches the Worker. Every other request is served straight off
+    // the asset path without invoking it, so the proxy costs nothing on the
+    // requests that make up almost all of the traffic.
+    "run_worker_first": ["/api/*"],
     // Lets the Worker fall back to the assets for anything that reaches it
     // outside the rule above.
     "binding": "ASSETS"
