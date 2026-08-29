@@ -94,10 +94,14 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
           // and no way to ask the browser to offer one. A top-level navigation
           // is not gated the same way, so this cannot fail for that reason.
           //
-          // Google posts the credential straight to the server instead of
-          // handing it back here, which is why `callback` above stops firing on
-          // this path. It stays for `POST /auth/google`, which the API and the
-          // tests still use.
+          // Google posts the credential straight to the server now, so the
+          // `callback` above never fires and the whole client-side sign-in path
+          // behind it — `onCredential`, `AuthProvider.signIn`, the error state
+          // SignIn.tsx renders — is unreachable. It is left in place rather than
+          // deleted because removing it touches the sign-in screen, and this
+          // change deliberately does not; `POST /auth/google` is still a real
+          // route with tests, so nothing here is wrong, only unused. Worth
+          // pruning once the redirect is proven in production.
           ux_mode: "redirect",
           // The app's own origin, never the API's. Same-origin is what keeps
           // the SameSite=lax auth cookies working, and the Vite proxy in dev

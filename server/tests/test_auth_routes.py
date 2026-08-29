@@ -477,3 +477,18 @@ class TestGoogleRedirectCallback:
         )
 
         assert response.headers["location"] == "/today"
+
+    async def test_a_non_ascii_csrf_token_is_rejected_not_a_server_error(self, client, google_ok):
+        # `compare_digest` raises TypeError on a non-ASCII *str*, and both halves
+        # are attacker-supplied. Compared as str, a chosen character turns this
+        # route into an uncaught 500 — a bare error page in the user's own
+        # window, which is the failure the whole route is shaped to avoid.
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "good-token", "g_csrf_token": "tökén-abc"},
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/signin")
+        assert not response.headers.get_list("set-cookie")

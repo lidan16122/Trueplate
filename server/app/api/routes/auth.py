@@ -170,7 +170,16 @@ async def google_redirect_callback(
     a third-party page can forge in the body but cannot read or set as a cookie.
     """
     cookie_token = request.cookies.get("g_csrf_token", "")
-    if not cookie_token or not g_csrf_token or not compare_digest(cookie_token, g_csrf_token):
+    # Compared as bytes, not as str. `compare_digest` raises TypeError on a
+    # non-ASCII str, and both halves here are attacker-supplied — the form field
+    # outright, the cookie header via a latin-1 decode. Comparing as str would
+    # turn a chosen character into an uncaught 500, which is exactly the bare
+    # error page in the user's window that this route exists to avoid.
+    if (
+        not cookie_token
+        or not g_csrf_token
+        or not compare_digest(cookie_token.encode(), g_csrf_token.encode())
+    ):
         # Also covers the cookie simply not arriving. It is set by Google's
         # script on this origin and the POST that should carry it is cross-site,
         # which is exactly the case SameSite governs — so treat absence as a
@@ -198,6 +207,12 @@ async def google_redirect_callback(
     # bounces a user who needs onboarding away from /today, but does *not* bounce
     # one who does not need it away from /onboarding — sending them there would
     # strand them in the wizard.
+    #
+    # These three paths are the client's, named here because a redirect has to
+    # nominate one and the browser leaves the API when it follows it. Renaming a
+    # route in `client/src/router.tsx` silently breaks sign-in, and nothing
+    # mechanical connects the two — the tests below are the only thing that would
+    # notice, and only because they assert the literal strings.
     destination = "/onboarding" if session.needs_onboarding else "/today"
     response = RedirectResponse(url=destination, status_code=status.HTTP_303_SEE_OTHER)
     set_auth_cookies(
