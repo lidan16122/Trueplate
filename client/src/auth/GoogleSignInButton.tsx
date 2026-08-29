@@ -13,6 +13,8 @@ interface GoogleAccounts {
         client_id: string;
         callback: (response: CredentialResponse) => void;
         cancel_on_tap_outside?: boolean;
+        ux_mode?: "popup" | "redirect";
+        login_uri?: string;
       }) => void;
       prompt: () => void;
       renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
@@ -84,6 +86,23 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
           client_id: clientId,
           callback: (response) => void onCredential(response.credential),
           cancel_on_tap_outside: false,
+          // Redirect rather than popup, because the popup is not recoverable.
+          // Sign-in worked locally and did nothing on the deployed origin from
+          // the same bundle: Chrome refused the window, showed no prompt, and
+          // only the site's popup permission fixed it. Nothing in script can
+          // reach that — there is no popup permission in the Permissions API
+          // and no way to ask the browser to offer one. A top-level navigation
+          // is not gated the same way, so this cannot fail for that reason.
+          //
+          // Google posts the credential straight to the server instead of
+          // handing it back here, which is why `callback` above stops firing on
+          // this path. It stays for `POST /auth/google`, which the API and the
+          // tests still use.
+          ux_mode: "redirect",
+          // The app's own origin, never the API's. Same-origin is what keeps
+          // the SameSite=lax auth cookies working, and the Vite proxy in dev
+          // and the Worker in production are what make /api resolve here.
+          login_uri: `${window.location.origin}/api/v1/auth/google/callback`,
         });
         window.google.accounts.id.renderButton(hiddenRef.current, {
           type: "standard",

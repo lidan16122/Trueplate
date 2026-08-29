@@ -362,3 +362,118 @@ class TestGoogleClockSkew:
         """It widens the expiry check too, so it must not become a real grace
         period on an hour-long token."""
         assert google_oauth.CLOCK_SKEW_SECONDS <= 60
+
+
+class TestGoogleRedirectCallback:
+    """The `ux_mode: "redirect"` landing point.
+
+    Google posts the credential here as a form after a full-page navigation,
+    instead of handing it to JavaScript in a popup. Every path answers with a
+    redirect: this is the user's own window, so a JSON error body would be
+    rendered to them as a bare page.
+    """
+
+    async def test_valid_post_signs_in_and_redirects(self, client, google_ok):
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "good-token", "g_csrf_token": "token-abc"},
+        )
+
+        # 303 specifically: 307 would preserve the method and re-POST the form
+        # at the app route.
+        assert response.status_code == 303
+        jar = {c.split("=")[0]: c for c in response.headers.get_list("set-cookie")}
+        assert settings.access_cookie_name in jar
+        assert settings.refresh_cookie_name in jar
+
+    async def test_a_new_user_lands_in_the_wizard(self, client, google_ok):
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "good-token", "g_csrf_token": "token-abc"},
+        )
+
+        # ProtectedRoute bounces a user who needs onboarding away from /today,
+        # but does not bounce one who does not need it away from /onboarding —
+        # so the server may only send them here when it actually computed it.
+        assert response.headers["location"] == "/onboarding"
+
+    async def test_a_missing_csrf_cookie_is_not_a_reason_to_skip_the_check(
+        self, client, google_ok
+    ):
+        # The cookie is set by Google's script on our origin and the POST that
+        # should carry it is cross-site, so absence is a failure to verify.
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "good-token", "g_csrf_token": "token-abc"},
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/signin")
+        assert not response.headers.get_list("set-cookie")
+
+    async def test_a_mismatched_csrf_token_is_rejected(self, client, google_ok):
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "good-token", "g_csrf_token": "a-different-token"},
+        )
+
+        assert response.headers["location"].startswith("/signin")
+        assert not response.headers.get_list("set-cookie")
+
+    async def test_a_rejected_credential_redirects_rather_than_rendering_json(
+        self, client, google_ok
+    ):
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "bad-token", "g_csrf_token": "token-abc"},
+        )
+
+        # The window is the user's own, so a 401 JSON body would be shown to
+        # them as a page.
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/signin")
+        assert not response.headers.get_list("set-cookie")
+
+    async def test_a_form_with_no_credential_redirects_rather_than_422ing(
+        self, client, google_ok
+    ):
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback", data={"g_csrf_token": "token-abc"}
+        )
+
+        # A required Form field would raise 422 before the body runs, and
+        # FastAPI would render that as JSON in the browser window.
+        assert response.status_code == 303
+        assert response.headers["location"].startswith("/signin")
+
+    async def test_a_returning_user_lands_on_today(self, client, google_ok):
+        # The wizard-vs-today fork is the one thing the redirect decides for
+        # itself, and getting it wrong for a user who has finished onboarding
+        # strands them in the wizard — ProtectedRoute only bounces the other way.
+        await sign_in(client)
+        await client.post(
+            "/api/v1/onboarding",
+            json={
+                "age": 32,
+                "sex": "female",
+                "height_cm": 172,
+                "weight_kg": 74,
+                "goal_type": "lose",
+                "target_weight_kg": 69,
+                "timezone": "Europe/Amsterdam",
+            },
+        )
+        client.cookies.clear()
+
+        client.cookies.set("g_csrf_token", "token-abc")
+        response = await client.post(
+            f"{API}/google/callback",
+            data={"credential": "good-token", "g_csrf_token": "token-abc"},
+        )
+
+        assert response.headers["location"] == "/today"
