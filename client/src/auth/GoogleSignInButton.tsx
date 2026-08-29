@@ -13,6 +13,7 @@ interface GoogleAccounts {
         client_id: string;
         callback: (response: CredentialResponse) => void;
         cancel_on_tap_outside?: boolean;
+        use_fedcm_for_button?: boolean;
       }) => void;
       prompt: () => void;
       renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
@@ -84,6 +85,21 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
           client_id: clientId,
           callback: (response) => void onCredential(response.credential),
           cancel_on_tap_outside: false,
+          // Sign-in works locally and dies on the deployed origin, with the same
+          // bundle. Chrome blocks the popup there and shows no prompt, and the
+          // site's popup permission set to Allow fixes it — which points at
+          // Chromium's abusive-experience popup blocker, the one remaining
+          // reason it refuses a popup that *does* carry a user gesture
+          // (components/blocked_content/popup_blocker.cc). It keys on the host,
+          // which is why localhost is fine and workers.dev is not, and nothing
+          // in script can lift it: there is no popup permission in the
+          // Permissions API and no way to ask the browser to prompt.
+          //
+          // FedCM is the way out, because it stops needing a popup at all —
+          // Chrome renders sign-in as browser-native UI it owns. Chrome desktop
+          // M125+; anything older, and every other browser, silently keeps the
+          // popup flow, which is already working for them.
+          use_fedcm_for_button: true,
         });
         window.google.accounts.id.renderButton(hiddenRef.current, {
           type: "standard",
