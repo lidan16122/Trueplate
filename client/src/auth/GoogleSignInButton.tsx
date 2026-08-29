@@ -13,7 +13,6 @@ interface GoogleAccounts {
         client_id: string;
         callback: (response: CredentialResponse) => void;
         cancel_on_tap_outside?: boolean;
-        use_fedcm_for_button?: boolean;
       }) => void;
       prompt: () => void;
       renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
@@ -57,17 +56,11 @@ interface Props {
 /**
  * A Google sign-in trigger wearing the design's own button.
  *
- * Google's `renderButton` draws a button this app cannot use as-is: its logo,
- * its wording and its own localisation, where the design asks for a white "G"
- * disc and "Continue with Google". So the real button is rendered off-screen
- * and clicked programmatically — the visible control is ours and the credential
- * flow is still Google's.
- *
- * This used to say the button "produces an iframe that cannot be restyled".
- * That was true of the old gapi library and is not true of Google Identity
- * Services, which renders into the light DOM — setting `border-radius` on the
- * rendered button takes. Styling it is therefore possible; it is the mark and
- * the copy, which Google's branding terms govern, that rule the approach out.
+ * Google's `renderButton` produces an iframe that cannot be restyled, which
+ * would put a stock Google button in the middle of a carefully specified
+ * layout. Instead the real button is rendered off-screen and clicked
+ * programmatically, so the visible control is ours and the credential flow is
+ * still Google's.
  */
 export function GoogleSignInButton({ onCredential, disabled, children, className }: Props) {
   const hiddenRef = useRef<HTMLDivElement>(null);
@@ -91,24 +84,6 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
           client_id: clientId,
           callback: (response) => void onCredential(response.credential),
           cancel_on_tap_outside: false,
-          // Sign-in works locally and dies on the deployed origin from the same
-          // bundle: Chrome blocks the popup there, and setting the site's popup
-          // permission to Allow fixes it. Whatever the reason, it is one script
-          // cannot reach — there is no popup permission in the Permissions API
-          // and no way to ask the browser to prompt for one.
-          //
-          // FedCM is the way out because it stops needing a popup at all: Chrome
-          // renders sign-in as browser-native UI it owns, so a blocker governing
-          // page-opened windows has nothing to act on. Desktop M125+, Android
-          // M128+ (google.accounts.id JS reference).
-          //
-          // Two things this does *not* establish, both worth knowing before
-          // trusting it. Google documents no fallback for browsers without
-          // FedCM — Safari is expected to keep the popup flow that already works
-          // there, but that is inference, not a documented guarantee. And on
-          // Chrome older than M125 the popup flow stays, which is precisely what
-          // is broken here, so this fixes nothing for those users.
-          use_fedcm_for_button: true,
         });
         window.google.accounts.id.renderButton(hiddenRef.current, {
           type: "standard",
@@ -143,17 +118,12 @@ export function GoogleSignInButton({ onCredential, disabled, children, className
         {children}
       </button>
 
-      {/* Moved off-viewport rather than collapsed. `display:none` stops GSI
-          rendering the button at all, which leaves nothing to click — but the
-          h-0/w-0/opacity-0 this used to carry is the shape an anti-clickjacking
-          check would object to most, and FedCM is a privacy feature whose
-          visibility requirements Google does not document. Off-screen at its
-          natural size is the version least likely to be refused, and it looks
-          identical: nothing here is ever seen either way. */}
+      {/* Kept in the layout but visually hidden: display:none stops GSI
+          rendering the button at all, which leaves nothing to click. */}
       <div
         ref={hiddenRef}
         aria-hidden
-        className="pointer-events-none absolute top-0 -left-[9999px]"
+        className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
       />
 
       {error && <p className="text-center text-label text-warn">{error}</p>}
