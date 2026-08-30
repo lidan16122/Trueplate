@@ -1,13 +1,16 @@
 import logging
+from dataclasses import dataclass
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.cookies import clear_auth_cookies, set_auth_cookies
 from app.config import settings
 from app.core.deps import CurrentUser, DbSession, Denylist, RefreshTokens, TokenClaims
 from app.core.devices import describe_device
 from app.core.security import create_access_token
+from app.db.models import User
 from app.schemas.auth import (
     GoogleSignInRequest,
     MessageResponse,
@@ -22,6 +25,7 @@ from app.services.auth_service import (
     upsert_google_user,
 )
 from app.services.google_oauth import GoogleAuthError, verify_google_credential
+from app.stores.refresh_tokens import RefreshTokenStore
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,58 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
+@dataclass(frozen=True, slots=True)
+class _EstablishedSession:
+    """Everything a caller needs, in whichever shape it answers in."""
+
+    user: User
+    access_token: str
+    refresh_token: str
+    needs_onboarding: bool
+
+
+async def _establish_session(
+    db: AsyncSession,
+    refresh_tokens: RefreshTokenStore,
+    request: Request,
+    credential: str,
+) -> _EstablishedSession:
+    """Turn a Google ID token into a session, minus the response.
+
+    Shared by the two ways a credential reaches us: a browser posting it as JSON,
+    and our own token exchange returning one after a redirect. Everything between
+    the credential and the response is identical for both; only the shape of the
+    answer differs, so the response is deliberately not built here — the caller
+    decides whether the cookies hang off a JSON body or a redirect.
+
+    Raises ``GoogleAuthError`` and ``EmailAlreadyRegisteredError`` rather than
+    translating them, because the right *kind* of response differs per caller
+    too: a 401 body is correct for an API client, and would be rendered as bare
+    JSON in the user's own window for a redirect.
+    """
+    identity = await verify_google_credential(credential)
+    resolved = await upsert_google_user(db, identity)
+
+    user_agent = request.headers.get("user-agent", "")
+    issued = await refresh_tokens.create_session(
+        user_id=str(resolved.user.id),
+        device_label=describe_device(user_agent),
+        user_agent=user_agent,
+        ip=_client_ip(request),
+    )
+    access = create_access_token(user_id=str(resolved.user.id), session_id=issued.family_id)
+
+    needs_onboarding = resolved.is_new_user or not await has_completed_onboarding(
+        db, resolved.user.id
+    )
+    return _EstablishedSession(
+        user=resolved.user,
+        access_token=access.token,
+        refresh_token=issued.raw_token,
+        needs_onboarding=needs_onboarding,
+    )
+
+
 @router.post("/google", response_model=SessionResponse)
 async def sign_in_with_google(
     payload: GoogleSignInRequest,
@@ -47,7 +103,7 @@ async def sign_in_with_google(
 ) -> SessionResponse:
     """Exchange a Google ID token for a session."""
     try:
-        identity = await verify_google_credential(payload.credential)
+        session = await _establish_session(db, refresh_tokens, request, payload.credential)
     except GoogleAuthError as exc:
         # One fixed message. `str(exc)` distinguishes "unexpected issuer" from
         # "email is not verified" from "GOOGLE_CLIENT_ID is not configured on
@@ -58,32 +114,18 @@ async def sign_in_with_google(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Google sign-in could not be verified",
         ) from exc
-
-    try:
-        resolved = await upsert_google_user(db, identity)
     except EmailAlreadyRegisteredError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="That email is already registered with a different sign-in method",
         ) from exc
-    user_agent = request.headers.get("user-agent", "")
 
-    issued = await refresh_tokens.create_session(
-        user_id=str(resolved.user.id),
-        device_label=describe_device(user_agent),
-        user_agent=user_agent,
-        ip=_client_ip(request),
+    set_auth_cookies(
+        response, access_token=session.access_token, refresh_token=session.refresh_token
     )
-    access = create_access_token(user_id=str(resolved.user.id), session_id=issued.family_id)
-    set_auth_cookies(response, access_token=access.token, refresh_token=issued.raw_token)
-
-    needs_onboarding = resolved.is_new_user or not await has_completed_onboarding(
-        db, resolved.user.id
-    )
-
     return SessionResponse(
-        user=UserOut.model_validate(resolved.user),
-        needs_onboarding=needs_onboarding,
+        user=UserOut.model_validate(session.user),
+        needs_onboarding=session.needs_onboarding,
     )
 
 
