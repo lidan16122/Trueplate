@@ -80,14 +80,10 @@ jobs:
       # works once the Worker proxies /api — an absolute URL to another domain
       # would put the auth cookies cross-site, which SameSite=lax forbids.
       #
-      # VITE_GOOGLE_CLIENT_ID is a repository *variable*, not a secret: Vite
-      # inlines every VITE_* into the public bundle, so a value that cannot
-      # survive being public cannot go here. Google client IDs are public by
-      # design. Unset is survivable — sign-in renders "not configured" rather
-      # than failing the build.
+      # No Google variable is passed any more. Sign-in became a server-side
+      # OAuth 2.0 redirect, so the client id lives only in the API's environment
+      # and nothing in the bundle reads one.
       - run: npm run build
-        env:
-          VITE_GOOGLE_CLIENT_ID: ${{ vars.VITE_GOOGLE_CLIENT_ID }}
 
       # Deploy ships these exact bytes rather than rebuilding, so what reaches
       # Cloudflare is what the three gates above actually passed.
