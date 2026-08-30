@@ -7,6 +7,7 @@ from urllib.parse import unquote_plus
 import httpx
 import pytest
 
+from app.api.routes import auth as auth_routes
 from app.config import settings
 from app.services import google_oauth
 from app.services.google_oauth import GoogleAuthError
@@ -637,3 +638,34 @@ class TestGoogleOAuthCallback:
         # Google re-checks redirect_uri against the one the authorization request
         # carried. Both legs read the same setting so they cannot drift.
         assert unquote_plus(sent["redirect_uri"]) == settings.google_redirect_uri
+
+    async def test_an_unexpected_failure_still_redirects_rather_than_500ing(
+        self, client, google_token, monkeypatch
+    ):
+        # The route's whole promise is that nothing it does renders JSON in the
+        # user's own window. Postgres and the token store are both reachable from
+        # here, so without a catch-all the promise held only for the failures
+        # that happened to be named.
+        async def boom(*args, **kwargs):
+            raise RuntimeError("the database went away")
+
+        monkeypatch.setattr(auth_routes, "_establish_session", boom)
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=unavailable"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_token_response_that_is_not_an_object_redirects(self, client, google_token):
+        # `.get` on a list raises AttributeError, which is not a
+        # GoogleTokenExchangeError — so before the isinstance guard this escaped
+        # as an uncaught 500. Sibling of the non-ASCII state above.
+        google_token(fakes.google_token_transport(body=["not", "an", "object"]))
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=exchange"

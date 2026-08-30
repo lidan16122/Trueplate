@@ -158,7 +158,9 @@ def google_token_transport(
     *,
     id_token: str = "good-token",
     status_code: int = 200,
-    body: dict[str, Any] | None = None,
+    # Not narrowed to a dict: a test needs to send a JSON body that is *not* an
+    # object, which is the shape that used to escape as an AttributeError.
+    body: Any = None,
     seen: list[httpx.Request] | None = None,
 ) -> httpx.MockTransport:
     """Google's token endpoint, substituted at the transport.

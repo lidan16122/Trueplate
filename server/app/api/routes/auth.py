@@ -277,6 +277,18 @@ async def complete_google_sign_in(
         return _abandon_sign_in("verification")
     except EmailAlreadyRegisteredError:
         return _abandon_sign_in("email_in_use")
+    except Exception:
+        # A broad catch, which is right here and nowhere else in this app.
+        # Postgres and the refresh-token store are both reachable from
+        # `_establish_session`, and an exception escaping this route is not a 500
+        # some API client parses — it is a bare error page in the user's own
+        # window, which is the single thing this route promises never to produce.
+        # Without this the promise is false for every failure we did not name.
+        #
+        # `logger.exception` rather than a message: unlike every other branch
+        # here, we do not know what happened, so the traceback is the only record.
+        logger.exception("Google callback failed unexpectedly")
+        return _abandon_sign_in("unavailable")
 
     # `/onboarding` only when the server actually computed it: ProtectedRoute
     # bounces a user who needs onboarding away from /today, but does *not* bounce

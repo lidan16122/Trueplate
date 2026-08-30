@@ -32,11 +32,12 @@ interface Props {
  * top-level navigation is not gated that way, so this cannot fail for that
  * reason.
  *
- * A <button> and not an <a>, even though this is a navigation: the className
- * SignIn.tsx passes carries `disabled:opacity-60`, and `:disabled` matches form
- * controls only, so an anchor would render the busy state at full opacity. An
- * anchor would also offer open-in-new-tab, which starts an authorization whose
- * session lands in a tab the user is not looking at.
+ * A <button> and not an <a>, even though this is a navigation: an anchor offers
+ * open-in-new-tab, which would start an authorization whose session lands in a
+ * tab the user is not looking at. (It would also ignore `disabled`, whose
+ * `:disabled` styling matches form controls only — but nothing passes `disabled`
+ * a true value any more, so that is a reason waiting to matter rather than one
+ * doing work today.)
  *
  * `location.assign`, not `replace`: Back from Google's consent screen should
  * return here rather than skip past the sign-in screen entirely.

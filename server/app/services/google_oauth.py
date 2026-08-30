@@ -121,6 +121,11 @@ def get_google_http_client() -> httpx.AsyncClient:
             # default is None, so a slow Google would pin a worker open and
             # present as this app being down.
             timeout=httpx.Timeout(settings.google_timeout_seconds),
+            # No `follow_redirects`, unlike the nutrition client. This request
+            # carries the client secret in its body, and httpx replays the body
+            # on a redirect — so following one would forward the secret to
+            # whatever host the response named. The token endpoint does not
+            # redirect; if it starts to, failing is the correct answer.
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
         )
     return _client
@@ -216,9 +221,18 @@ async def exchange_code_for_id_token(*, code: str, code_verifier: str) -> str:
         )
 
     try:
-        id_token_value = response.json().get("id_token", "")
+        payload = response.json()
     except ValueError as exc:
         raise GoogleTokenExchangeError("Token response was not JSON") from exc
+
+    # `.get` on a list or a string raises AttributeError, which is not a
+    # GoogleTokenExchangeError and so would escape the callback's handler as an
+    # uncaught 500 — the bare error page in the user's own window that the whole
+    # route is shaped to avoid. Sibling of the `compare_digest` TypeError trap.
+    if not isinstance(payload, dict):
+        raise GoogleTokenExchangeError("Token response was not a JSON object")
+
+    id_token_value = payload.get("id_token", "")
 
     if not id_token_value:
         # A 200 with no id_token means the `openid` scope did not survive the
@@ -234,9 +248,15 @@ async def exchange_code_for_id_token(*, code: str, code_verifier: str) -> str:
 
 def _token_error_code(response: httpx.Response) -> str:
     try:
-        return str(response.json().get("error", "no error code"))
+        payload = response.json()
     except ValueError:
         return "unparseable body"
+    # Same reason as the isinstance check above: this runs while building the
+    # message of an exception already being raised, so an AttributeError here
+    # would replace a handled failure with an unhandled one.
+    if not isinstance(payload, dict):
+        return "not an object"
+    return str(payload.get("error", "no error code"))
 
 
 def _verify_sync(credential: str) -> dict:
