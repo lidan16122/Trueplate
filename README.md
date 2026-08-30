@@ -18,7 +18,7 @@ Responsive web app, installable as a PWA.
 | Backend | Python 3.14, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic |
 | Database | PostgreSQL 17 via psycopg3 |
 | Cache / sessions | Redis 8 (async redis-py) |
-| Auth | Google Identity Services → `google-auth` verification → JWT access cookie + rotated opaque refresh token |
+| Auth | Google OAuth 2.0 authorization-code redirect → `google-auth` verification → JWT access cookie + rotated opaque refresh token |
 | AI | Claude API, tool use with a strict JSON schema (not wired up yet) |
 
 Monorepo: `client/` and `server/`. One PR spans both sides, which is what you want for a solo
@@ -93,18 +93,25 @@ Nothing signs in until you create an OAuth client. It is free and takes about fi
      testing, only listed accounts can sign in.
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Application type: **Web application**
-   - **Authorised JavaScript origins:** `http://localhost:5173`
-   - Leave redirect URIs empty — Google Identity Services returns the ID token to the page, so
-     there is no redirect leg.
-4. Copy the **Client ID** (`...apps.googleusercontent.com`) into **both**:
-   - `.env` → `GOOGLE_CLIENT_ID` (the backend verifies tokens against it)
-   - `client/.env` → `VITE_GOOGLE_CLIENT_ID` (create it from `client/.env.example`)
+   - **Authorised redirect URIs:** `http://localhost:5173/api/v1/auth/google/callback`, plus the
+     same path on any deployed origin.
 
-The client ID is not a secret — it is published in the page. The client secret is never used by
-this flow and does not need to go anywhere.
+   > This list is the easy one to skip, and nothing works without it. Sign-in is a full
+   > authorization-code redirect: the browser leaves for Google and comes back to that exact
+   > URI, which Google matches against this entry byte for byte. Get it wrong and you never
+   > reach the app at all — Google shows its own `redirect_uri_mismatch` page. Authorised
+   > JavaScript origins are not used by this flow and can stay empty.
+4. Copy the **Client ID** and the **Client secret** into the repo-root `.env`:
+   - `GOOGLE_CLIENT_ID` — the audience every ID token is checked against
+   - `GOOGLE_CLIENT_SECRET` — sent server-to-server when the code is exchanged
+   - `GOOGLE_REDIRECT_URI` — the same string you pasted into the Console
 
-Until it is configured the sign-in screen renders normally and shows
-*"Google sign-in is not configured"* under the button.
+Nothing Google-related belongs in `client/.env`. The browser never sees the client id now, and
+the secret must never go anywhere Vite can inline it — every `VITE_*` variable ends up in the
+public bundle.
+
+Until it is configured the sign-in screen renders normally, and pressing the button returns you
+to it with *"Google sign-in is unavailable right now."*
 
 ---
 
@@ -138,8 +145,24 @@ Without either, opening a second tab signs the user out. There are tests for exa
 Each refresh family carries device metadata, which is what makes `GET /api/v1/auth/sessions` and
 per-device revocation possible — visible on the profile screen.
 
-**CSRF** is deliberately deferred. `SameSite=Lax` blocks cross-site POSTs, which covers the
-current surface; a double-submit token is the next step if that changes.
+**CSRF** is deferred for the API and enforced on the one route that cannot defer it.
+`SameSite=Lax` blocks cross-site POSTs, which covers everything the client calls. The exception
+is the sign-in redirect: Google returns the user from `accounts.google.com`, so the request that
+creates a session arrives cross-site. `GET /api/v1/auth/google/callback` checks a `state` it
+minted itself and stored in a short-lived httpOnly cookie, compared in constant time and used
+once.
+
+**Why that callback is a GET**, since it is the sentence a future reader needs before moving it
+back: Lax cookies are sent on a cross-site top-level **GET** by specification, in every browser.
+On a cross-site **POST** they are not — Chrome sends them anyway only under its two-minute
+"Lax-allowing-unsafe" intervention, which Safari and Firefox do not implement and which expires
+while a user is still choosing an account. Google Identity Services' redirect mode posts, which
+is why it was not used.
+
+The same cookie carries a **PKCE** verifier. The client is confidential, so `state` alone already
+defends against login CSRF; PKCE is there because the authorization code arrives in a query
+string and is proxied through Cloudflare to Render, two hops that log request URLs. A code
+recovered from a log is redeemable with the secret alone — with PKCE it is worthless.
 
 ---
 

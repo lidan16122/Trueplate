@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { GoogleSignInButton } from "@/auth/GoogleSignInButton";
 import { useAuth } from "@/auth/useAuth";
@@ -8,10 +9,33 @@ const HEADLINE = "Know what you ate, not what you guessed.";
 const SUBHEAD =
   "Photograph a meal. Trueplate estimates the portions, you correct them, the numbers come from a food database.";
 
+// The server's failure vocabulary for the redirect flow, turned into something a
+// person can act on. Sign-in leaves the page entirely now, so a failure returns
+// the user to a screen identical to the one they left — silent, which is exactly
+// the state three earlier attempts at this bug left the app in.
+//
+// Mapped, never rendered raw. The query param is whatever is in the address bar;
+// React escapes it so it is not XSS, but echoing it would let a crafted link
+// print arbitrary text inside our own chrome — a convincing place to leave a
+// phone number. Anything unrecognised renders nothing.
+const REDIRECT_ERRORS: Record<string, string | undefined> = {
+  state: "That sign-in attempt expired or was interrupted. Please try again.",
+  google: "Google did not finish the sign-in.",
+  exchange: "Could not reach Google to finish signing in. Please try again.",
+  verification: "Google sign-in could not be verified.",
+  email_in_use: "That email is already registered with a different sign-in method.",
+  unavailable: "Google sign-in is unavailable right now.",
+};
+
 export function SignIn() {
   const { signIn } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [params] = useSearchParams();
+
+  // Left in the URL rather than stripped on mount: it is the one thing a user
+  // can copy into a bug report, and a sign-in screen has nothing to lose by it.
+  const message = error ?? REDIRECT_ERRORS[params.get("error") ?? ""] ?? null;
 
   const handleCredential = useCallback(
     async (credential: string) => {
@@ -65,9 +89,9 @@ export function SignIn() {
           <p className="text-center text-label leading-relaxed text-subtle md:max-w-[200px] md:text-left md:text-caption">
             Trueplate is a measurement tool, not medical advice.
           </p>
-          {error && (
+          {message && (
             <div className="md:absolute md:top-full md:left-0 md:mt-3 md:w-[420px]">
-              <ErrorNote>{error}</ErrorNote>
+              <ErrorNote>{message}</ErrorNote>
             </div>
           )}
         </div>

@@ -1,6 +1,6 @@
-"""Stand-ins for the two external services the detection path talks to.
+"""Stand-ins for the external services this app talks to.
 
-Both substitute at the real boundary — the Anthropic SDK object and the httpx
+Every one substitutes at the real boundary — the Anthropic SDK object, the httpx
 transport — rather than behind an abstraction of our own. That is what keeps the
 tests honest: the request we build, the response parsing, the retry loop and the
 JSON shapes upstream actually returns are all still exercised.
@@ -152,3 +152,35 @@ def off_product_payload(name: str, kcal: float, code: str = "5000112637939") -> 
             },
         },
     }
+
+
+def google_token_transport(
+    *,
+    id_token: str = "good-token",
+    status_code: int = 200,
+    # Not narrowed to a dict: a test needs to send a JSON body that is *not* an
+    # object, which is the shape that used to escape as an AttributeError.
+    body: Any = None,
+    seen: list[httpx.Request] | None = None,
+) -> httpx.MockTransport:
+    """Google's token endpoint, substituted at the transport.
+
+    ``id_token`` defaults to "good-token" because the ``google_ok`` fixture's
+    stand-in verifier already treats that string as valid and "bad-token" as
+    forged — so the two legs of the flow speak the same language, and a test that
+    wants a rejected credential changes one word.
+
+    ``seen`` collects the requests, which is what lets a test assert the PKCE
+    verifier and the client secret were actually sent. Stubbing our own exchange
+    function instead would quietly stop proving the two things a confidential
+    client and PKCE exist for.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        if status_code != 200:
+            return httpx.Response(status_code, json={"error": "invalid_grant"})
+        return httpx.Response(200, json=body or {"id_token": id_token, "token_type": "Bearer"})
+
+    return httpx.MockTransport(handler)

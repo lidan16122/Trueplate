@@ -54,6 +54,13 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      # Not a secret, but still dashboard-set: a literal `value:` here would bake
+      # this deploy's hostname into the repo, where it is wrong for anyone who
+      # forks it or renames the service. It must match the Console entry exactly.
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
 
       # The defaults assume a local Postgres that answers instantly. A free-tier
       # Neon or Upstash scaling to zero pays a cold start on the first request

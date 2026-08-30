@@ -1,11 +1,26 @@
 """End-to-end auth: sign-in, cookie flags, rotation, theft, and session listing."""
 
+import base64
+import hashlib
+from urllib.parse import unquote_plus
+
+import httpx
 import pytest
 
+from app.api.routes import auth as auth_routes
 from app.config import settings
 from app.services import google_oauth
 from app.services.google_oauth import GoogleAuthError
-from tests.helpers import ALICE, age_tombstone, google_payload, sign_in
+from tests import fakes
+from tests.helpers import (
+    ALICE,
+    age_tombstone,
+    complete_onboarding,
+    google_payload,
+    set_cookie_header,
+    set_cookie_names,
+    sign_in,
+)
 from tests.helpers import AUTH_API as API
 
 
@@ -362,3 +377,295 @@ class TestGoogleClockSkew:
         """It widens the expiry check too, so it must not become a real grace
         period on an hour-long token."""
         assert google_oauth.CLOCK_SKEW_SECONDS <= 60
+
+
+class TestGoogleOAuthStart:
+    """The leg that sends the browser to Google.
+
+    A plain top-level navigation, which is the entire point. The popup this
+    replaces could be refused outright by the browser, with no permission in the
+    Permissions API to request and no prompt to trigger.
+    """
+
+    async def test_start_sends_the_browser_to_google_with_our_client_id(
+        self, client, google_token
+    ):
+        response = await client.get(f"{API}/google/start")
+
+        assert response.status_code == 303
+        location = httpx.URL(response.headers["location"])
+        assert location.host == "accounts.google.com"
+        assert location.params["client_id"] == settings.google_client_id
+        assert location.params["response_type"] == "code"
+        assert location.params["redirect_uri"] == settings.google_redirect_uri
+
+    async def test_start_asks_only_for_the_claims_the_verifier_reads(self, client, google_token):
+        response = await client.get(f"{API}/google/start")
+        params = httpx.URL(response.headers["location"]).params
+
+        assert params["scope"] == "openid email profile"
+        # `offline` would hand us a long-lived Google refresh token to store and
+        # protect, for an API this app never calls.
+        assert "access_type" not in params
+
+    async def test_the_state_cookie_is_unreadable_to_script_and_sent_on_a_lax_navigation(
+        self, client, google_token
+    ):
+        response = await client.get(f"{API}/google/start")
+        cookie = set_cookie_header(response, settings.oauth_state_cookie_name)
+
+        assert "httponly" in cookie.lower()
+        assert "secure" in cookie.lower()
+        # Lax and not Strict: Google returns the user on a cross-site top-level
+        # GET, which Strict is defined not to be sent on. Strict here would fail
+        # every sign-in and nothing else.
+        assert "samesite=lax" in cookie.lower()
+
+    async def test_the_state_cookie_is_scoped_to_the_route_that_reads_it(
+        self, client, google_token
+    ):
+        # The only mechanical link between OAUTH_STATE_COOKIE_PATH and the route
+        # decorator. A drift between them is silent: the browser simply stops
+        # sending the cookie and every sign-in fails the state check.
+        response = await client.get(f"{API}/google/start")
+
+        assert f"Path={API}/google/callback" in set_cookie_header(
+            response, settings.oauth_state_cookie_name
+        )
+
+    async def test_start_binds_the_pkce_challenge_to_the_stored_verifier(
+        self, client, google_token
+    ):
+        # Recomputed independently of the code that built it. Nothing else short
+        # of the real Google would catch the challenge and the verifier drifting
+        # apart — and if they do, every sign-in fails in production only.
+        response = await client.get(f"{API}/google/start")
+        params = httpx.URL(response.headers["location"]).params
+        _, verifier = client.cookies[settings.oauth_state_cookie_name].partition(".")[::2]
+
+        expected = (
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
+            .rstrip(b"=")
+            .decode()
+        )
+        assert params["code_challenge"] == expected
+        assert params["code_challenge_method"] == "S256"
+
+    async def test_two_sign_ins_never_share_a_state(self, client, google_token):
+        first = await client.get(f"{API}/google/start")
+        second = await client.get(f"{API}/google/start")
+
+        assert (
+            httpx.URL(first.headers["location"]).params["state"]
+            != httpx.URL(second.headers["location"]).params["state"]
+        )
+
+    async def test_an_unconfigured_server_sends_the_user_back_without_naming_the_variable(
+        self, client, google_token, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "google_client_secret", "")
+        response = await client.get(f"{API}/google/start")
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=unavailable"
+        assert "SECRET" not in response.headers["location"].upper()
+
+
+class TestGoogleOAuthCallback:
+    """Where Google returns the user, carrying an authorization code.
+
+    Every path answers with a redirect and none of them raise: this is the user's
+    own window, so a JSON error body would be rendered to them as a bare page.
+    """
+
+    @staticmethod
+    async def _callback(client, **params):
+        """The leg Google sends the user back to, with whatever it carried."""
+        return await client.get(f"{API}/google/callback", params=params)
+
+    @staticmethod
+    async def _start(client) -> str:
+        """Walk the real start leg, and hand back the state it minted.
+
+        Deliberately not a hand-made cookie: the value under test has to be the
+        one the route actually set, or the test stops noticing when the two legs
+        disagree. httpx path-matches the cookie onto the callback GET by itself.
+        """
+        response = await client.get(f"{API}/google/start")
+        return httpx.URL(response.headers["location"]).params["state"]
+
+    async def test_a_new_user_lands_in_the_wizard(self, client, google_token):
+        state = await self._start(client)
+        response = await self._callback(client, code="abc", state=state)
+
+        # ProtectedRoute bounces a user who needs onboarding away from /today,
+        # but does not bounce one who does not need it away from /onboarding —
+        # so the server may only send them here when it actually computed it.
+        assert response.status_code == 303
+        assert response.headers["location"] == "/onboarding"
+
+    async def test_a_successful_callback_sets_both_auth_cookies(self, client, google_token):
+        state = await self._start(client)
+        response = await self._callback(client, code="abc", state=state)
+
+        names = set_cookie_names(response)
+        assert settings.access_cookie_name in names
+        assert settings.refresh_cookie_name in names
+
+    async def test_a_returning_user_lands_on_today(self, client, google_token):
+        # The wizard-vs-today fork is the one thing the redirect decides for
+        # itself, and getting it wrong for a user who has finished onboarding
+        # strands them in the wizard — ProtectedRoute only bounces the other way.
+        await sign_in(client)
+        await complete_onboarding(client)
+        client.cookies.clear()
+
+        state = await self._start(client)
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.headers["location"] == "/today"
+
+    async def test_the_state_cookie_is_cleared_once_it_has_been_used(self, client, google_token):
+        state = await self._start(client)
+        response = await self._callback(client, code="abc", state=state)
+
+        # Single use: leaving it live for the rest of its ten minutes would let
+        # the same authorization leg be raced with a second code.
+        assert "Max-Age=0" in set_cookie_header(response, settings.oauth_state_cookie_name)
+
+    async def test_a_missing_state_cookie_is_not_a_reason_to_skip_the_check(
+        self, client, google_token
+    ):
+        state = await self._start(client)
+        client.cookies.delete(settings.oauth_state_cookie_name)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.headers["location"] == "/signin?error=state"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_mismatched_state_sends_the_user_back_with_no_session(
+        self, client, google_token
+    ):
+        await self._start(client)
+        response = await self._callback(client, code="abc", state="not-the-state")
+
+        assert response.headers["location"] == "/signin?error=state"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_non_ascii_state_does_not_crash_the_route(self, client, google_token):
+        # `compare_digest` raises TypeError on a non-ASCII *str*, and `state` is
+        # whatever the URL said. Compared as str, one chosen character turns this
+        # route into an uncaught 500 — a bare error page in the user's own
+        # window, which is the failure the whole route is shaped to avoid.
+        await self._start(client)
+        response = await self._callback(client, code="abc", state="é")
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=state"
+
+    async def test_a_failed_token_exchange_redirects_rather_than_raising(
+        self, client, google_token
+    ):
+        google_token(fakes.google_token_transport(status_code=400))
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=exchange"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_token_response_without_an_id_token_redirects(self, client, google_token):
+        # A 200 with no id_token means the `openid` scope did not survive the
+        # request — our bug, not the user's, and it must not read as a session.
+        google_token(fakes.google_token_transport(body={"access_token": "ya29.a0"}))
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.headers["location"] == "/signin?error=exchange"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_rejected_id_token_redirects_rather_than_rendering_json(
+        self, client, google_token
+    ):
+        google_token(fakes.google_token_transport(id_token="bad-token"))
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        # The window is the user's own, so a 401 JSON body would be shown to them
+        # as a page.
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=verification"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_cancelled_consent_screen_returns_to_a_clean_sign_in(
+        self, client, google_token
+    ):
+        # Pressing Cancel is a choice, not a failure. An error note would accuse
+        # the app of breaking at something the user decided not to do.
+        await self._start(client)
+        response = await self._callback(client, error="access_denied")
+
+        assert response.headers["location"] == "/signin"
+
+    async def test_a_callback_with_neither_a_code_nor_an_error_is_refused(
+        self, client, google_token
+    ):
+        # Defaulted rather than required: a required query param raises 422
+        # before the body runs, and FastAPI renders that as JSON in the window.
+        state = await self._start(client)
+        response = await self._callback(client, state=state)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=google"
+
+    async def test_the_exchange_proves_both_the_secret_and_the_verifier(
+        self, client, google_token
+    ):
+        seen: list[httpx.Request] = []
+        google_token(fakes.google_token_transport(seen=seen))
+        state = await self._start(client)
+        verifier = client.cookies[settings.oauth_state_cookie_name].partition(".")[2]
+
+        await self._callback(client, code="abc", state=state)
+
+        sent = dict(pair.split("=", 1) for pair in seen[0].content.decode().split("&"))
+        assert sent["code_verifier"] == verifier
+        assert sent["client_secret"] == settings.google_client_secret
+        # Google re-checks redirect_uri against the one the authorization request
+        # carried. Both legs read the same setting so they cannot drift.
+        assert unquote_plus(sent["redirect_uri"]) == settings.google_redirect_uri
+
+    async def test_an_unexpected_failure_still_redirects_rather_than_500ing(
+        self, client, google_token, monkeypatch
+    ):
+        # The route's whole promise is that nothing it does renders JSON in the
+        # user's own window. Postgres and the token store are both reachable from
+        # here, so without a catch-all the promise held only for the failures
+        # that happened to be named.
+        async def boom(*args, **kwargs):
+            raise RuntimeError("the database went away")
+
+        monkeypatch.setattr(auth_routes, "_establish_session", boom)
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=unavailable"
+        assert settings.access_cookie_name not in set_cookie_names(response)
+
+    async def test_a_token_response_that_is_not_an_object_redirects(self, client, google_token):
+        # `.get` on a list raises AttributeError, which is not a
+        # GoogleTokenExchangeError — so before the isinstance guard this escaped
+        # as an uncaught 500. Sibling of the non-ASCII state above.
+        google_token(fakes.google_token_transport(body=["not", "an", "object"]))
+        state = await self._start(client)
+
+        response = await self._callback(client, code="abc", state=state)
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signin?error=exchange"

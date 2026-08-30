@@ -105,9 +105,17 @@ export default {
     const location = response.headers.get("location");
     if (location) {
       const resolved = new URL(location, target);
-      if (resolved.origin === apiOrigin) {
+      const rewritten = resolved.pathname + resolved.search + resolved.hash;
+      // The `rewritten !== location` guard keeps this branch off the sign-in
+      // path. The OAuth callback already answers with a *relative* Location, so
+      // there is nothing to rewrite — but rebuilding the headers anyway would put
+      // its three Set-Cookie lines through `new Headers(...)` on every sign-in,
+      // and a rebuild that dropped one would look like success and then die on
+      // the next request. The rewrite still runs where it is actually needed: an
+      // absolute Location built by Starlette from the API's own Host.
+      if (resolved.origin === apiOrigin && rewritten !== location) {
         const headers = new Headers(response.headers);
-        headers.set("location", resolved.pathname + resolved.search + resolved.hash);
+        headers.set("location", rewritten);
         return new Response(response.body, {
           status: response.status,
           statusText: response.statusText,

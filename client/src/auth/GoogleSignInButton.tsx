@@ -1,52 +1,21 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-
-const GSI_SRC = "https://accounts.google.com/gsi/client";
-
-interface CredentialResponse {
-  credential: string;
-}
-
-interface GoogleAccounts {
-  accounts: {
-    id: {
-      initialize: (config: {
-        client_id: string;
-        callback: (response: CredentialResponse) => void;
-        cancel_on_tap_outside?: boolean;
-      }) => void;
-      prompt: () => void;
-      renderButton: (parent: HTMLElement, options: Record<string, unknown>) => void;
-    };
-  };
-}
-
-declare global {
-  interface Window {
-    google?: GoogleAccounts;
-  }
-}
-
-let scriptPromise: Promise<void> | null = null;
-
-/** Load Google Identity Services once, however many buttons ask for it. */
-function loadGsi(): Promise<void> {
-  scriptPromise ??= new Promise((resolve, reject) => {
-    if (window.google?.accounts?.id) {
-      resolve();
-      return;
-    }
-    const script = document.createElement("script");
-    script.src = GSI_SRC;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Could not load Google Sign-In"));
-    document.head.appendChild(script);
-  });
-  return scriptPromise;
-}
+// The server owns every Google parameter now — client id, secret, redirect URI,
+// and the state cookie — so this component needs no Google configuration at all,
+// and VITE_GOOGLE_CLIENT_ID has left the client entirely.
+//
+// Relative, and deliberately not built from VITE_API_BASE_URL the way lib/api.ts
+// builds every other call. The whole flow depends on the browser staying on the
+// origin that served the page, because that is the only origin the SameSite=Lax
+// auth cookies apply to; an absolute URL here would sign the user in on a host
+// they are not on. Paired with the route in server/app/api/routes/auth.py —
+// nothing mechanical connects the two.
+const SIGN_IN_START = "/api/v1/auth/google/start";
 
 interface Props {
+  /**
+   * No longer called: nothing in this flow hands a credential to JavaScript.
+   * Kept in the props, with POST /auth/google and AuthProvider.signIn behind it,
+   * so the popup path is a single revert away.
+   */
   onCredential: (credential: string) => void | Promise<void>;
   disabled?: boolean;
   children: React.ReactNode;
@@ -56,77 +25,32 @@ interface Props {
 /**
  * A Google sign-in trigger wearing the design's own button.
  *
- * Google's `renderButton` produces an iframe that cannot be restyled, which
- * would put a stock Google button in the middle of a carefully specified
- * layout. Instead the real button is rendered off-screen and clicked
- * programmatically, so the visible control is ours and the credential flow is
- * still Google's.
+ * It starts sign-in by leaving the page. Every earlier version of this component
+ * rendered Google's real button off-screen and forwarded a synthetic `.click()`
+ * to it, which asked the browser to open a popup — and on the deployed origin
+ * Chrome refused, with no prompt and no permission a script can request. A
+ * top-level navigation is not gated that way, so this cannot fail for that
+ * reason.
+ *
+ * A <button> and not an <a>, even though this is a navigation: an anchor offers
+ * open-in-new-tab, which would start an authorization whose session lands in a
+ * tab the user is not looking at. (It would also ignore `disabled`, whose
+ * `:disabled` styling matches form controls only — but nothing passes `disabled`
+ * a true value any more, so that is a reason waiting to matter rather than one
+ * doing work today.)
+ *
+ * `location.assign`, not `replace`: Back from Google's consent screen should
+ * return here rather than skip past the sign-in screen entirely.
  */
-export function GoogleSignInButton({ onCredential, disabled, children, className }: Props) {
-  const hiddenRef = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-
-  useEffect(() => {
-    if (!clientId) {
-      setError("Google sign-in is not configured");
-      return;
-    }
-
-    let cancelled = false;
-
-    loadGsi()
-      .then(() => {
-        if (cancelled || !window.google || !hiddenRef.current) return;
-
-        window.google.accounts.id.initialize({
-          client_id: clientId,
-          callback: (response) => void onCredential(response.credential),
-          cancel_on_tap_outside: false,
-        });
-        window.google.accounts.id.renderButton(hiddenRef.current, {
-          type: "standard",
-          size: "large",
-        });
-        setReady(true);
-      })
-      .catch((err: Error) => {
-        if (!cancelled) setError(err.message);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [clientId, onCredential]);
-
-  const handleClick = useCallback(() => {
-    // Click the real (hidden) Google button so the credential flow is
-    // untouched — no popup blocked, no reimplemented OAuth.
-    const realButton = hiddenRef.current?.querySelector<HTMLElement>('div[role="button"]');
-    realButton?.click();
-  }, []);
-
+export function GoogleSignInButton({ disabled, children, className }: Props) {
   return (
-    <>
-      <button
-        type="button"
-        onClick={handleClick}
-        disabled={disabled || !ready}
-        className={className}
-      >
-        {children}
-      </button>
-
-      {/* Kept in the layout but visually hidden: display:none stops GSI
-          rendering the button at all, which leaves nothing to click. */}
-      <div
-        ref={hiddenRef}
-        aria-hidden
-        className="pointer-events-none absolute h-0 w-0 overflow-hidden opacity-0"
-      />
-
-      {error && <p className="text-center text-label text-warn">{error}</p>}
-    </>
+    <button
+      type="button"
+      onClick={() => window.location.assign(SIGN_IN_START)}
+      disabled={disabled}
+      className={className}
+    >
+      {children}
+    </button>
   );
 }

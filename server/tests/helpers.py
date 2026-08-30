@@ -54,3 +54,43 @@ async def age_tombstone(redis, raw_token: str, seconds: float = 3600) -> None:
         "rotated_at",
         str(datetime.now(UTC).timestamp() - seconds),
     )
+
+
+def set_cookie_header(response, name: str) -> str:
+    """The one `Set-Cookie` line for `name`, so a test can assert on its flags.
+
+    httpx merges the jar; the flags only exist on the raw header, and a response
+    that sets three cookies has three of them.
+    """
+    for header in response.headers.get_list("set-cookie"):
+        if header.startswith(f"{name}="):
+            return header
+    raise AssertionError(f"no Set-Cookie for {name!r} in {response.headers.get_list('set-cookie')}")
+
+
+def set_cookie_names(response) -> set[str]:
+    """Which cookies a response sets at all — the check a failure path needs."""
+    return {header.split("=", 1)[0] for header in response.headers.get_list("set-cookie")}
+
+
+ONBOARDING_ANSWERS = {
+    "age": 32,
+    "sex": "female",
+    "height_cm": 172,
+    "weight_kg": 74,
+    "goal_type": "lose",
+    "target_weight_kg": 69,
+    "timezone": "Europe/Amsterdam",
+}
+
+
+async def complete_onboarding(client, **overrides):
+    """Take the signed-in user through the wizard.
+
+    Lives here so the auth tests can reach a *returning, onboarded* user — the
+    case the redirect callback has to route to /today rather than the wizard —
+    without importing from test_onboarding_routes.
+    """
+    return await client.post(
+        "/api/v1/onboarding", json={**ONBOARDING_ANSWERS, **overrides}
+    )
