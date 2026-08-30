@@ -25,6 +25,7 @@ from app.main import app as fastapi_app
 from app.services import google_oauth
 from app.stores.client import get_redis
 from app.stores.refresh_tokens import RefreshTokenStore
+from tests import fakes
 from tests.helpers import google_payload
 
 
@@ -129,3 +130,37 @@ def google_ok(monkeypatch):
 
     monkeypatch.setattr(google_oauth, "_verify_sync", fake_verify_sync)
     monkeypatch.setattr(settings, "google_client_id", "test-client-id.apps.googleusercontent.com")
+
+
+@pytest_asyncio.fixture
+async def google_token(monkeypatch, google_ok):
+    """Substitute Google's token endpoint — the external dependency — only.
+
+    Patches the module-level client in `google_oauth`, the same kind of seam
+    `google_ok` uses for `_verify_sync`, so nothing of ours is stubbed: the form
+    we encode, the status handling and the JSON parsing all still run, against a
+    real httpx client over a fake transport.
+
+    Depends on `google_ok` because the two legs are one flow — an exchange that
+    returns a token nothing can verify tests half a sign-in.
+
+    Yields the installer, so a test that wants a failing exchange can swap the
+    transport after the fact.
+    """
+    monkeypatch.setattr(settings, "google_client_secret", "test-client-secret")
+    monkeypatch.setattr(
+        settings, "google_redirect_uri", "https://testserver/api/v1/auth/google/callback"
+    )
+
+    opened: list[httpx.AsyncClient] = []
+
+    def install(transport: httpx.MockTransport | None = None) -> None:
+        http = httpx.AsyncClient(transport=transport or fakes.google_token_transport())
+        opened.append(http)
+        monkeypatch.setattr(google_oauth, "_client", http)
+
+    install()
+    yield install
+
+    for http in opened:
+        await http.aclose()

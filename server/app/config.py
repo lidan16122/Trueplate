@@ -64,6 +64,11 @@ class Settings(BaseSettings):
 
     access_cookie_name: str = "tp_access"
     refresh_cookie_name: str = "tp_refresh"
+    # Carries the CSRF state and the PKCE verifier for one in-flight sign-in.
+    # Named here beside the other two so the whole cookie vocabulary reads from
+    # one place, which is what lets the tests assert on names rather than
+    # literals.
+    oauth_state_cookie_name: str = "tp_oauth"
     cookie_secure: bool = True
     cookie_samesite: str = "lax"
     # Scoping the refresh cookie to the auth router keeps it off every other
@@ -75,6 +80,30 @@ class Settings(BaseSettings):
     access_denylist_enabled: bool = False
 
     google_client_id: str = ""
+
+    # Empty default, deliberately unlike `jwt_secret_key` above. The reasoning
+    # that makes a missing signing key fatal does not transfer: a missing secret
+    # here cannot make us issue a weak credential, it can only fail an exchange
+    # Google would have refused anyway. A deploy that has not set this yet must
+    # still boot and keep serving everyone holding a live session — only signing
+    # in is broken, and it breaks with a message on the sign-in screen rather
+    # than a process that will not start.
+    google_client_secret: str = ""
+
+    # The *app's* origin, never the API's, and never derived from the incoming
+    # request. Two independent reasons it cannot be derived: Google matches this
+    # string against the Console entry exactly, and neither proxy in front of
+    # this app preserves the browser's Host — `changeOrigin: true` in
+    # vite.config.ts rewrites it to localhost:8000, and `new Request(target,
+    # request)` in client/worker/index.ts rewrites it to the API's. A
+    # request-derived value would name the API's origin and strand the
+    # SameSite=Lax auth cookies on a host the browser is not on.
+    google_redirect_uri: str = ""
+
+    # Google's token endpoint sits on the sign-in path, and httpx defaults to no
+    # timeout at all — a slow Google would pin a worker open and present as this
+    # app being down.
+    google_timeout_seconds: float = 10.0
 
     # ---------- CORS ----------
     # Only consulted cross-origin. The Vite dev proxy makes the browser treat the
