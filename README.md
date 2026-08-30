@@ -94,14 +94,8 @@ Nothing signs in until you create an OAuth client. It is free and takes about fi
 3. **APIs & Services → Credentials → Create credentials → OAuth client ID**
    - Application type: **Web application**
    - **Authorised JavaScript origins:** `http://localhost:5173`
-   - **Authorised redirect URIs:** `http://localhost:5173/api/v1/auth/google/callback`, plus
-     the same path on any deployed origin.
-
-   > Both lists are needed, and the redirect one is easy to skip. Sign-in runs in
-   > `ux_mode: "redirect"`: Google posts the credential to that URI as a form after a
-   > full-page navigation, rather than handing it to JavaScript. The popup flow it replaces
-   > can be refused outright by a browser, with no permission to request and no prompt to
-   > trigger — a navigation cannot.
+   - Leave redirect URIs empty — Google Identity Services returns the ID token to the page, so
+     there is no redirect leg.
 4. Copy the **Client ID** (`...apps.googleusercontent.com`) into **both**:
    - `.env` → `GOOGLE_CLIENT_ID` (the backend verifies tokens against it)
    - `client/.env` → `VITE_GOOGLE_CLIENT_ID` (create it from `client/.env.example`)
@@ -144,14 +138,8 @@ Without either, opening a second tab signs the user out. There are tests for exa
 Each refresh family carries device metadata, which is what makes `GET /api/v1/auth/sessions` and
 per-device revocation possible — visible on the profile screen.
 
-**CSRF** is deferred for the API, and enforced on the one route that cannot defer it.
-`SameSite=Lax` blocks cross-site POSTs, which covers everything the client calls. The
-exception is `POST /api/v1/auth/google/callback`, where Google posts the credential *from
-`accounts.google.com`* after the redirect — a cross-site POST by design, and so outside what
-SameSite protects. That route verifies Google's double-submit token: the same value in a
-cookie set on this origin and in the form body, which a third-party page can forge in the body
-but can neither read nor set as a cookie. A missing cookie is treated as a failure to verify,
-not as permission to skip verifying.
+**CSRF** is deliberately deferred. `SameSite=Lax` blocks cross-site POSTs, which covers the
+current surface; a double-submit token is the next step if that changes.
 
 ---
 
