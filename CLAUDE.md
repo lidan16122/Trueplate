@@ -176,6 +176,7 @@ Open the app on **:5173**, not :8000. The Vite proxy makes `/api` same-origin, w
 what lets the httpOnly cookies work with no CORS configuration at all.
 
 Postgres and Redis are expected to come from `docker-compose.yml`. This machine runs
-managed instances instead (Neon, Upstash); connection URLs live in the gitignored root
-`.env`, and `DATABASE_URL` needs the `postgresql+psycopg://` prefix or SQLAlchemy selects
-the sync driver.
+managed instances instead (Neon, Upstash); connection URLs live in the gitignored
+`server/.env` — the app reads that one, the repo-root `.env` is Compose's — and
+`DATABASE_URL` needs the `postgresql+psycopg://` prefix or SQLAlchemy selects the sync
+driver.

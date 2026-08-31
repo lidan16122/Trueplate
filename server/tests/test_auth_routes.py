@@ -1,4 +1,4 @@
-"""End-to-end auth: sign-in, cookie flags, rotation, theft, and session listing."""
+"""End-to-end auth: sign-in, cookie flags, rotation, and theft detection."""
 
 import base64
 import hashlib
@@ -230,38 +230,18 @@ class TestLogout:
 
 
 class TestSessionManagement:
-    async def test_lists_the_current_device(self, client, google_ok):
-        await sign_in(client)
-
-        body = (await client.get(f"{API}/sessions")).json()
-
-        assert len(body["sessions"]) == 1
-        assert body["sessions"][0]["is_current"] is True
-
-    async def test_device_label_is_derived_from_the_user_agent(self, client, google_ok):
+    async def test_device_label_is_derived_from_the_user_agent(self, client, google_ok, redis):
         await client.post(
             f"{API}/google",
             json={"credential": "good-token"},
             headers={"user-agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Safari/604.1"},
         )
 
-        body = (await client.get(f"{API}/sessions")).json()
-        assert body["sessions"][0]["device_label"] == "Safari on iPhone"
-
-    async def test_revoking_another_device_leaves_this_one_signed_in(self, client, google_ok):
-        # First device.
-        await sign_in(client)
-        first = (await client.get(f"{API}/sessions")).json()["sessions"][0]["family_id"]
-
-        # Second device signs in and becomes the current one.
-        client.cookies.clear()
-        await sign_in(client)
-
-        response = await client.delete(f"{API}/sessions/{first}")
-
-        assert response.status_code == 200
-        assert (await client.get(f"{API}/me")).status_code == 200
-        assert len((await client.get(f"{API}/sessions")).json()["sessions"]) == 1
+        # Read the label off the family hash rather than through an endpoint:
+        # nothing serves it any more, but the route still derives it and
+        # create_session still stores it on every sign-in.
+        family_key = (await redis.keys("rt:family:*"))[0]
+        assert await redis.hget(family_key, "device_label") == "Safari on iPhone"
 
     async def test_revoking_an_unknown_session_is_404(self, client, google_ok):
         await sign_in(client)
@@ -269,9 +249,6 @@ class TestSessionManagement:
         response = await client.delete(f"{API}/sessions/00000000-0000-0000-0000-000000000000")
 
         assert response.status_code == 404
-
-    async def test_sessions_require_authentication(self, client):
-        assert (await client.get(f"{API}/sessions")).status_code == 401
 
 
 class TestGoogleCredentialVerification:

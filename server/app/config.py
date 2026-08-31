@@ -4,17 +4,23 @@ from typing import Annotated
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-# app/config.py -> app -> server -> repo root
-REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
+# app/config.py -> app -> server
+SERVER_ROOT = Path(__file__).resolve().parents[1]
+ENV_FILE = SERVER_ROOT / ".env"
 
 
 class Settings(BaseSettings):
     """Application configuration.
 
-    Resolved from the repo-root ``.env`` via an absolute path, so the app behaves
+    Resolved from ``server/.env`` via an absolute path, so the app behaves
     identically whether it is launched from ``server/``, the repo root, or a
     process manager with an unrelated working directory.
+
+    Deliberately not the repo-root ``.env``: that file is Compose's, read by it
+    to interpolate the ``POSTGRES_*`` and ``REDIS_PORT`` variables in
+    ``docker-compose.yml``. The two overlap because the same Postgres has to be
+    described to both the container and the app, but they are read by different
+    processes and only this one is ours.
     """
 
     model_config = SettingsConfigDict(

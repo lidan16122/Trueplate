@@ -21,8 +21,6 @@ from app.db.models import User
 from app.schemas.auth import (
     GoogleSignInRequest,
     MessageResponse,
-    SessionListResponse,
-    SessionOut,
     SessionResponse,
     UserOut,
 )
@@ -390,27 +388,6 @@ async def read_current_user(user: CurrentUser, db: DbSession) -> SessionResponse
     return SessionResponse(
         user=UserOut.model_validate(user),
         needs_onboarding=not await has_completed_onboarding(db, user.id),
-    )
-
-
-@router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions(
-    user: CurrentUser, claims: TokenClaims, refresh_tokens: RefreshTokens
-) -> SessionListResponse:
-    """Devices this account is currently signed in on."""
-    sessions = await refresh_tokens.list_sessions(str(user.id))
-    return SessionListResponse(
-        sessions=[
-            SessionOut(
-                family_id=s.family_id,
-                device_label=s.device_label,
-                ip=s.ip,
-                created_at=s.created_at,
-                last_used_at=s.last_used_at,
-                is_current=s.family_id == claims.session_id,
-            )
-            for s in sessions
-        ]
     )
 
 
