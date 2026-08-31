@@ -8,10 +8,10 @@ file with the signing code.
 
 
 def describe_device(user_agent: str) -> str:
-    """A human label for the sessions list.
+    """A human label for a signed-in device.
 
     Crude on purpose: this is a hint to help someone recognise their own device
-    in a list, not analytics. Full UA string is stored alongside it.
+    again later, not analytics. The full UA string is stored alongside it.
     """
     ua = user_agent or ""
     lowered = ua.lower()

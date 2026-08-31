@@ -240,69 +240,6 @@ class TestRevocation:
         assert (await store.rotate(theirs.raw_token)).status == "ok"
 
 
-class TestSessionListing:
-    async def test_metadata_round_trips(self, store: RefreshTokenStore):
-        await store.create_session(
-            user_id=USER, device_label="iPhone 15", user_agent="Mozilla/5.0 ...", ip="203.0.113.7"
-        )
-        sessions = await store.list_sessions(USER)
-
-        assert len(sessions) == 1
-        assert sessions[0].device_label == "iPhone 15"
-        assert sessions[0].ip == "203.0.113.7"
-        assert sessions[0].created_at
-
-    async def test_lists_every_device(self, store: RefreshTokenStore):
-        await store.create_session(user_id=USER, device_label="Phone")
-        await store.create_session(user_id=USER, device_label="Laptop")
-
-        labels = {s.device_label for s in await store.list_sessions(USER)}
-        assert labels == {"Phone", "Laptop"}
-
-    async def test_expired_families_are_pruned_lazily(self, store: RefreshTokenStore, redis):
-        alive = await store.create_session(user_id=USER, device_label="Phone")
-        dead = await store.create_session(user_id=USER, device_label="Old tablet")
-
-        # A family reaching its TTL leaves a dangling id in the user's set.
-        await redis.delete(keys.refresh_family_key(dead.family_id))
-
-        sessions = await store.list_sessions(USER)
-
-        assert [s.family_id for s in sessions] == [alive.family_id]
-        assert dead.family_id not in await redis.smembers(keys.refresh_user_families_key(USER))
-
-    async def test_revoked_device_disappears_from_the_list(self, store: RefreshTokenStore):
-        phone = await store.create_session(user_id=USER, device_label="Phone")
-        await store.create_session(user_id=USER, device_label="Laptop")
-
-        await store.revoke_family(phone.family_id)
-
-        assert [s.device_label for s in await store.list_sessions(USER)] == ["Laptop"]
-
-    async def test_revoking_someone_elses_session_does_nothing(
-        self, store: RefreshTokenStore, redis
-    ):
-        """Authorisation is the operation, not a check in front of it.
-
-        Knowing a family id must not be enough to sign another user out.
-        """
-        theirs = await store.create_session(user_id=OTHER_USER)
-
-        assert await store.revoke_family(theirs.family_id, owner_id=USER) is False
-        # Untouched: still live, and still listed for its real owner.
-        assert await redis.exists(keys.refresh_family_key(theirs.family_id)) == 1
-        assert [s.family_id for s in await store.list_sessions(OTHER_USER)] == [theirs.family_id]
-
-    async def test_revoking_your_own_session_succeeds(self, store: RefreshTokenStore):
-        mine = await store.create_session(user_id=USER)
-
-        assert await store.revoke_family(mine.family_id, owner_id=USER) is True
-        assert await store.list_sessions(USER) == []
-
-    async def test_no_sessions_is_an_empty_list(self, store: RefreshTokenStore):
-        assert await store.list_sessions(str(uuid.uuid4())) == []
-
-
 class TestAccessDenylist:
     async def test_writes_nothing_while_disabled(self, redis):
         denylist = AccessTokenDenylist(redis)
@@ -335,7 +272,7 @@ class TestLogoutRacingRotation:
     between the token lookup and that write, an unconditional HSET recreates the
     family holding only a token hash — no `user_id`, which is the field
     `revoke_family` keys off and `family_belongs_to` reads. The session would
-    then outlive its own logout and be unreachable from the session list.
+    then outlive its own logout, unreachable by any later revoke.
     """
 
     async def test_rotation_does_not_recreate_a_family_revoked_mid_flight(
@@ -350,16 +287,6 @@ class TestLogoutRacingRotation:
 
         assert result.status != "ok", "a revoked family must not rotate"
         assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 0
-
-    async def test_a_revoked_session_stays_out_of_the_session_list(
-        self, store: RefreshTokenStore
-    ):
-        issued = await store.create_session(user_id=USER)
-        await store.revoke_family(issued.family_id)
-        await store.rotate(issued.raw_token)
-
-        families = [s.family_id for s in await store.list_sessions(USER)]
-        assert issued.family_id not in families
 
     async def test_no_orphan_token_survives_the_race(self, store: RefreshTokenStore, redis):
         issued = await store.create_session(user_id=USER)

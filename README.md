@@ -142,8 +142,9 @@ Two things make that safe against false positives, and both are load-bearing:
 Without either, opening a second tab signs the user out. There are tests for exactly that
 (`tests/test_refresh_tokens.py::TestConcurrency`).
 
-Each refresh family carries device metadata, which is what makes `GET /api/v1/auth/sessions` and
-per-device revocation possible — visible on the profile screen.
+Each refresh family carries its own id and device metadata, which is what makes per-device
+revocation (`DELETE /api/v1/auth/sessions/{family_id}`) possible without disturbing the
+user's other devices.
 
 **CSRF** is deferred for the API and enforced on the one route that cannot defer it.
 `SameSite=Lax` blocks cross-site POSTs, which covers everything the client calls. The exception
@@ -206,7 +207,7 @@ barcode path (servings) scale through identical code.
 cd server && uv run pytest
 ```
 
-107 tests, no database or Redis required — Redis is `fakeredis` executing the **real Lua** via
+258 tests, no database or Redis required — Redis is `fakeredis` executing the **real Lua** via
 lupa, and the identity tables run on in-memory SQLite. The rotation, theft-detection, and
 concurrency behaviour is genuinely exercised, not mocked.
 

@@ -180,20 +180,6 @@ class RotationResult:
     raw_token: str | None = None
 
 
-def _parse_iso(value: str) -> datetime:
-    """Read a stored timestamp back as a datetime.
-
-    Redis holds these as ISO strings; both writers (`create_session` and the
-    rotate script) produce them the same way. A record predating a format change
-    — or one truncated by hand — must not take down the session list, so an
-    unreadable value falls back to the epoch and simply sorts last.
-    """
-    try:
-        return datetime.fromisoformat(value)
-    except (TypeError, ValueError):
-        return datetime.fromtimestamp(0, UTC)
-
-
 class RefreshTokenStore:
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
@@ -229,8 +215,10 @@ class RefreshTokenStore:
                 "user_id": user_id,
                 "family_id": family_id,
                 "current_token_hash": token_hash,
-                # Metadata exists so a "your active devices" screen can be built
-                # without a schema change — see list_sessions.
+                # Metadata for a "your active devices" screen. Nothing reads it
+                # today — the listing endpoint was removed — but writing it on
+                # every sign-in is what lets that screen come back later showing
+                # real history instead of blanks for every session predating it.
                 "device_label": device_label,
                 "user_agent": user_agent[:512],
                 "ip": ip,

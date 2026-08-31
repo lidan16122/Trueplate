@@ -390,6 +390,7 @@ async def read_current_user(user: CurrentUser, db: DbSession) -> SessionResponse
         needs_onboarding=not await has_completed_onboarding(db, user.id),
     )
 
+
 @router.delete("/sessions/{family_id}", response_model=MessageResponse)
 async def revoke_session(
     family_id: str,
