@@ -50,9 +50,5 @@ class SessionOut(BaseModel):
     is_current: bool = False
 
 
-class SessionListResponse(BaseModel):
-    sessions: list[SessionOut]
-
-
 class MessageResponse(BaseModel):
     detail: str

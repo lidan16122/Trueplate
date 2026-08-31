@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # app/config.py -> app -> server -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_FILE = REPO_ROOT / ".env"
+ENV_FILE = REPO_ROOT / "server" / ".env"
 
 
 class Settings(BaseSettings):

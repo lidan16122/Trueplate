@@ -194,18 +194,6 @@ def _parse_iso(value: str) -> datetime:
         return datetime.fromtimestamp(0, UTC)
 
 
-@dataclass(frozen=True, slots=True)
-class SessionInfo:
-    family_id: str
-    device_label: str
-    user_agent: str
-    ip: str
-    # Real datetimes, not the raw strings. They cross an API boundary, and
-    # sorting the string form only worked while every value shared a format.
-    created_at: datetime
-    last_used_at: datetime
-
-
 class RefreshTokenStore:
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
@@ -338,46 +326,4 @@ class RefreshTokenStore:
                 revoked += 1
         await self._redis.delete(keys.refresh_user_families_key(user_id))
         return revoked
-
-    # ---------- inspect ----------
-
-    async def list_sessions(self, user_id: str) -> list[SessionInfo]:
-        """Active devices for a user, newest first.
-
-        Families expire on their own TTL while the user's set does not shrink
-        with them, so dead ids are pruned lazily here rather than by a sweeper.
-        """
-        user_key = keys.refresh_user_families_key(user_id)
-        family_ids = await self._redis.smembers(user_key)
-        if not family_ids:
-            return []
-
-        pipe = self._redis.pipeline(transaction=False)
-        ordered = list(family_ids)
-        for family_id in ordered:
-            pipe.hgetall(keys.refresh_family_key(family_id))
-        records = await pipe.execute()
-
-        sessions: list[SessionInfo] = []
-        stale: list[str] = []
-        for family_id, record in zip(ordered, records, strict=True):
-            if not record:
-                stale.append(family_id)
-                continue
-            sessions.append(
-                SessionInfo(
-                    family_id=family_id,
-                    device_label=record.get("device_label", "Unknown device"),
-                    user_agent=record.get("user_agent", ""),
-                    ip=record.get("ip", ""),
-                    created_at=_parse_iso(record.get("created_at", "")),
-                    last_used_at=_parse_iso(record.get("last_used_at", "")),
-                )
-            )
-
-        if stale:
-            await self._redis.srem(user_key, *stale)
-
-        sessions.sort(key=lambda s: s.last_used_at, reverse=True)
-        return sessions
 

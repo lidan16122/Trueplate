@@ -168,7 +168,6 @@ export const api = {
       post<SessionResponse>("/auth/google", { credential }, { skipRefresh: true }),
     me: () => get<SessionResponse>("/auth/me"),
     logout: () => post<{ detail: string }>("/auth/logout", undefined, { skipRefresh: true }),
-    sessions: () => get<{ sessions: Session[] }>("/auth/sessions"),
     revokeSession: (familyId: string) => del<{ detail: string }>(`/auth/sessions/${familyId}`),
   },
 

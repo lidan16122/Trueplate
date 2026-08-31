@@ -5,7 +5,7 @@ import { useAuth } from "@/auth/useAuth";
 import { ErrorNote, Eyebrow, Stat } from "@/components/ui";
 import { api } from "@/lib/api";
 import { GOAL_OPTIONS, SEX_OPTIONS } from "@/lib/labels";
-import type { Profile as ProfileData, Session, Targets } from "@/types/api";
+import type { Profile as ProfileData, Targets } from "@/types/api";
 
 export function Profile() {
   const { user, signOut, refreshUser } = useAuth();
@@ -13,7 +13,6 @@ export function Profile() {
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [targets, setTargets] = useState<Targets | null>(null);
-  const [sessions, setSessions] = useState<Session[]>([]);
   const [firstName, setFirstName] = useState(user?.first_name ?? "");
   const [lastName, setLastName] = useState(user?.last_name ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +22,6 @@ export function Profile() {
     void Promise.allSettled([
       api.profile.read().then(setProfile),
       api.profile.targets().then(setTargets),
-      api.auth.sessions().then((r) => setSessions(r.sessions)),
     ]);
   }, []);
 
@@ -49,7 +47,6 @@ export function Profile() {
 
   const revoke = useCallback(async (familyId: string) => {
     await api.auth.revokeSession(familyId);
-    setSessions((prev) => prev.filter((s) => s.family_id !== familyId));
   }, []);
 
   const numberField = (
@@ -226,41 +223,6 @@ export function Profile() {
             </div>
           )}
         </section>
-
-        {/* Devices — the refresh-token families, made visible. */}
-        {sessions.length > 0 && (
-          <section className="flex flex-col gap-4">
-            <Eyebrow>Signed in on</Eyebrow>
-            <ul className="flex flex-col gap-2">
-              {sessions.map((session) => (
-                <li
-                  key={session.family_id}
-                  className="flex items-center justify-between gap-4 rounded-card border border-line bg-surface px-4 py-3"
-                >
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-body text-ink">
-                      {session.device_label}
-                      {session.is_current && (
-                        <span className="ml-2 text-label text-accent">this device</span>
-                      )}
-                    </span>
-                    {session.ip && (
-                      <span className="font-mono text-label text-faint">{session.ip}</span>
-                    )}
-                  </div>
-                  {!session.is_current && (
-                    <button
-                      onClick={() => void revoke(session.family_id)}
-                      className="flex-none text-caption text-muted transition-colors hover:text-warn"
-                    >
-                      Sign out
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
 
         <button
           onClick={handleSignOut}
