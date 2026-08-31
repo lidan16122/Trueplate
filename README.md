@@ -34,9 +34,13 @@ same file, so it is the one that has to match.
 
 ```bash
 cp .env.example .env
+cp .env.example server/.env
 ```
 
-Generate a signing key and paste it into `.env` as `JWT_SECRET_KEY` — the command is in
+Two copies on purpose: `docker compose` reads the root one to size the containers, the app
+reads `server/.env` and nothing else.
+
+Generate a signing key and paste it into `server/.env` as `JWT_SECRET_KEY` — the command is in
 `.env.example` beside the variable itself. The app refuses to start without it, rather than
 falling back to a default that would sign real tokens with a value published in this repo.
 
