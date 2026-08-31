@@ -14,7 +14,6 @@ import type {
   FoodEntryCreate,
   OnboardingPayload,
   Profile,
-  Session,
   SessionResponse,
   Targets,
 } from "@/types/api";

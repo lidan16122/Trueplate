@@ -45,10 +45,6 @@ export function Profile() {
     navigate("/signin", { replace: true });
   }, [signOut, navigate]);
 
-  const revoke = useCallback(async (familyId: string) => {
-    await api.auth.revokeSession(familyId);
-  }, []);
-
   const numberField = (
     label: string,
     value: number | null | undefined,

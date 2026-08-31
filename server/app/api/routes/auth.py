@@ -21,7 +21,6 @@ from app.db.models import User
 from app.schemas.auth import (
     GoogleSignInRequest,
     MessageResponse,
-    SessionOut,
     SessionResponse,
     UserOut,
 )
