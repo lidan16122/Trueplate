@@ -70,6 +70,13 @@ export interface OnboardingPayload {
   timezone?: string;
 }
 
+export interface PromptLimit {
+  allowed: boolean;
+  used: number;
+  /** Null for an uncapped account, which is what a null `max_prompts` means. */
+  limit: number | null;
+}
+
 export interface Profile {
   age: number | null;
   sex: Sex | null;

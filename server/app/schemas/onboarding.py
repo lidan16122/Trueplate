@@ -129,3 +129,16 @@ class GoalOut(BaseModel):
 class OnboardingResponse(BaseModel):
     goal: GoalOut
     targets: TargetsOut
+
+
+class PromptLimitOut(BaseModel):
+    """What is left of the account's AI-detection allowance.
+
+    The arithmetic travels with the verdict so the add-food screen can say
+    "3 of 3 used" rather than greying its camera out with no explanation. A null
+    `limit` is an uncapped account, and `allowed` is then always true.
+    """
+
+    allowed: bool
+    used: int
+    limit: int | None

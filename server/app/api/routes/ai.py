@@ -16,7 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.core.deps import CurrentUser, DbSession, Detector, FoodFacts
-from app.core.limits import AI_DETECT_SCOPE, RateLimit
+from app.core.limits import AI_DETECT_SCOPE, RateLimit, require_prompt_allowance
 from app.enums import DetectionMethod, MealType
 from app.schemas.detection import (
     FoodDetectionResponse,
@@ -84,7 +84,7 @@ async def _read_upload(image: UploadFile) -> bytes:
 @router.post(
     "/detect/photo",
     response_model=FoodDetectionResponse,
-    dependencies=[Depends(detect_rate_limit)],
+    dependencies=[Depends(detect_rate_limit), Depends(require_prompt_allowance)],
 )
 async def detect_from_photo(
     user: CurrentUser,
@@ -141,7 +141,7 @@ async def detect_from_photo(
 @router.post(
     "/detect/text",
     response_model=FoodDetectionResponse,
-    dependencies=[Depends(detect_rate_limit)],
+    dependencies=[Depends(detect_rate_limit), Depends(require_prompt_allowance)],
 )
 async def detect_from_text(
     payload: TextDetectionRequest,
@@ -176,6 +176,8 @@ async def detect_from_text(
 @router.post(
     "/detect/barcode",
     response_model=FoodDetectionResponse,
+    # No prompt allowance here, deliberately: this path never calls a model,
+    # so it costs nothing against the cap and stays open to a capped account.
     dependencies=[Depends(detect_rate_limit)],
 )
 async def detect_from_barcode(

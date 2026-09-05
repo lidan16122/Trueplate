@@ -14,6 +14,7 @@ import type {
   FoodEntryCreate,
   OnboardingPayload,
   Profile,
+  PromptLimit,
   SessionResponse,
   Targets,
 } from "@/types/api";
@@ -181,6 +182,8 @@ export const api = {
     read: () => get<Profile>("/profile"),
     update: (payload: Record<string, unknown>) => patch<Targets>("/profile", payload),
     targets: () => get<Targets>("/profile/targets"),
+    /** How much of the account's AI-detection allowance is left. */
+    userLimit: () => get<PromptLimit>("/profile/user-limit"),
   },
 
   ai: {
