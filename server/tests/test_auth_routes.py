@@ -85,7 +85,7 @@ class TestCookies:
             if c.startswith(settings.access_cookie_name)
         )
 
-        # A 30-day credential must not ride along on every API call.
+        # The credential that mints access tokens must not ride along on every call.
         assert f"Path={settings.refresh_cookie_path}" in refresh
         assert "Path=/" in access
 

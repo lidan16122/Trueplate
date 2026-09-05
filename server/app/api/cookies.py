@@ -4,8 +4,9 @@ Both tokens travel as httpOnly cookies and are never exposed to JavaScript —
 which is the point: a token readable by JS is a token stealable by any injected
 script or compromised dependency.
 
-The refresh cookie is additionally scoped to the auth router, so a 30-day
-credential is not attached to every API call the app makes.
+The refresh cookie is additionally scoped to the auth router, so the one
+credential that can mint access tokens is not attached to every API call the app
+makes — only the two routes that actually read it ever see it.
 
 A third, short-lived cookie carries the OAuth state and PKCE verifier between the
 two legs of a redirect sign-in. Every cookie flag in this app lives in this one
