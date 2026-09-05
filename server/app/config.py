@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(min_length=32)
     jwt_algorithm: str = "HS256"
     access_token_ttl_minutes: int = 15
-    refresh_token_ttl_days: int = 30
+    refresh_token_ttl_days: int = 1
 
     # Replaying a just-rotated refresh token within this window is treated as a
     # client retry (a flaky network, two tabs racing) rather than theft.
@@ -67,6 +67,14 @@ class Settings(BaseSettings):
     # Costs an attacker nothing they could not already do inside the same few
     # seconds; the next mismatched rotation still catches them.
     refresh_reuse_grace_seconds: int = 15
+
+    # How long a rotated token stays *detectable* as a replay, as opposed to
+    # merely unknown. Far longer than the session itself, deliberately: expiry
+    # slides, so an actively used family outlives every token rotated out of it.
+    # A tombstone on the session's own clock would expire first, and a genuine
+    # theft replayed after that reads as a plain invalid token — rejected, but
+    # with the family left alive and nothing logged for anyone to notice.
+    refresh_reuse_tombstone_days: int = 30
 
     access_cookie_name: str = "tp_access"
     refresh_cookie_name: str = "tp_refresh"
@@ -78,7 +86,9 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     cookie_samesite: str = "lax"
     # Scoping the refresh cookie to the auth router keeps it off every other
-    # request, so a token with 30-day life is not sprayed across the whole API.
+    # request. A day's credential is a smaller prize than a month's, but it is
+    # still the one that mints access tokens — no reason to spray it across
+    # every endpoint when only two routes ever read it.
     refresh_cookie_path: str = "/api/v1/auth"
 
     # Nice-to-have instant revocation. Off by default: the hot path verifies the
@@ -217,6 +227,10 @@ class Settings(BaseSettings):
     @property
     def refresh_token_ttl_seconds(self) -> int:
         return self.refresh_token_ttl_days * 24 * 60 * 60
+
+    @property
+    def refresh_reuse_tombstone_seconds(self) -> int:
+        return self.refresh_reuse_tombstone_days * 24 * 60 * 60
 
 
 # Resolved once, at import. This is deliberately a plain module-level singleton

@@ -125,12 +125,17 @@ to it with *"Google sign-in is unavailable right now."*
 Verified by signature alone, so the common path never touches Redis. Never in `localStorage`: a
 token readable by JavaScript is a token stealable by any injected script.
 
-**Refresh token** — 30 days, an opaque 256-bit random string, *not* a JWT, in an httpOnly cookie
+**Refresh token** — 1 day, an opaque 256-bit random string, *not* a JWT, in an httpOnly cookie
 scoped to `/api/v1/auth` so it is not attached to every API call. Only its SHA-256 reaches Redis.
 
-**Rotation** — every refresh consumes the token and issues a new one, resetting the 30-day TTL
+**Rotation** — every refresh consumes the token and issues a new one, resetting the 1-day TTL
 (sliding expiration: an active user is never forced to sign in again, a dormant session still ages
 out). The swap runs as a Redis Lua script so the check-and-swap is atomic.
+
+The tombstone a rotation leaves behind keeps its own, much longer life
+(`REFRESH_REUSE_TOMBSTONE_DAYS`, 30 days). Because expiry slides, an active family outlives every
+token rotated out of it; a tombstone that expired with the session would make a late replay of a
+stolen token read as merely unknown — rejected, but with the family left alive and nothing logged.
 
 **Theft detection** — presenting an already-rotated token revokes that whole session family, not
 just the one token, on the assumption it was captured.
