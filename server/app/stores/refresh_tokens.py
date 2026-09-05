@@ -54,6 +54,7 @@ def _now_iso() -> str:
 # ARGV[1] family prefix  ARGV[2] user prefix     ARGV[3] ttl
 # ARGV[4] now (iso)      ARGV[5] new token hash
 # ARGV[6] now (epoch)    ARGV[7] reuse grace seconds
+# ARGV[8] tombstone ttl
 #
 # Returns {status, ...}:
 #   {"OK", user_id, family_id} | {"RETRY", family_id}
@@ -95,12 +96,14 @@ local family_id  = data['family_id']
 local family_key = ARGV[1] .. family_id
 local user_key   = ARGV[2] .. user_id
 local ttl        = tonumber(ARGV[3])
+-- Separate from `ttl`: the tombstone outlives its own family on purpose.
+local grave_ttl  = tonumber(ARGV[8])
 local now        = ARGV[4]
 local new_hash   = ARGV[5]
 
 redis.call('DEL', KEYS[1])
 redis.call('HSET', KEYS[2], 'family_id', family_id, 'rotated_at', ARGV[6])
-redis.call('EXPIRE', KEYS[2], ttl)
+redis.call('EXPIRE', KEYS[2], grave_ttl)
 
 redis.call('HSET', KEYS[3], 'user_id', user_id, 'family_id', family_id, 'issued_at', now)
 redis.call('EXPIRE', KEYS[3], ttl)
@@ -184,6 +187,10 @@ class RefreshTokenStore:
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
         self._ttl = settings.refresh_token_ttl_seconds
+        # Read once here like `_ttl`, not per call: both are key lifetimes
+        # handed to a script. The grace window is not — that is a decision
+        # made fresh on every rotation.
+        self._tombstone_ttl = settings.refresh_reuse_tombstone_seconds
         self._rotate = redis.register_script(_ROTATE_LUA)
         self._revoke_family_script = redis.register_script(_REVOKE_FAMILY_LUA)
 
@@ -260,6 +267,7 @@ class RefreshTokenStore:
                 new_hash,
                 now.timestamp(),
                 settings.refresh_reuse_grace_seconds,
+                self._tombstone_ttl,
             ],
         )
 

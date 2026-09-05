@@ -37,10 +37,14 @@ class TestIssuing:
         assert a.family_id != b.family_id
         assert a.raw_token != b.raw_token
 
-    async def test_ttl_is_thirty_days(self, store: RefreshTokenStore, redis):
+    async def test_ttl_matches_the_configured_session_length(
+        self, store: RefreshTokenStore, redis
+    ):
+        # Derived from the setting rather than restating the number: a test that
+        # repeats the constant only pins that someone typed it twice.
         issued = await store.create_session(user_id=USER)
         ttl = await redis.ttl(keys.refresh_token_key(hash_token(issued.raw_token)))
-        assert 29 * 86400 < ttl <= 30 * 86400
+        assert settings.refresh_token_ttl_seconds - 60 < ttl <= settings.refresh_token_ttl_seconds
 
 
 class TestRotation:
@@ -87,7 +91,24 @@ class TestRotation:
         await store.rotate(issued.raw_token)
 
         # An active user is never forced to re-login.
-        assert await redis.ttl(family_key) > 29 * 86400
+        assert await redis.ttl(family_key) > settings.refresh_token_ttl_seconds - 60
+
+    async def test_the_tombstone_outlives_the_session_it_came_from(
+        self, store: RefreshTokenStore, redis
+    ):
+        # Expiry slides, so an active family outlives every token rotated out of
+        # it. A tombstone kept on the session's own clock would expire first, and
+        # a stolen token replayed after that reads as merely unknown — rejected,
+        # but with the family left alive and no reuse warning for anyone to see.
+        issued = await store.create_session(user_id=USER)
+        old_hash = hash_token(issued.raw_token)
+
+        result = await store.rotate(issued.raw_token)
+
+        tombstone = await redis.ttl(keys.refresh_used_key(old_hash))
+        session = await redis.ttl(keys.refresh_token_key(hash_token(result.raw_token)))
+        assert tombstone > session
+        assert settings.refresh_reuse_tombstone_seconds - 60 < tombstone
 
     async def test_chained_rotations_each_succeed(self, store: RefreshTokenStore):
         issued = await store.create_session(user_id=USER)
