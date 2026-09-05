@@ -19,8 +19,10 @@ from app.schemas.onboarding import (
     OnboardingResponse,
     ProfileOut,
     ProfileUpdateRequest,
+    PromptLimitOut,
     TargetsOut,
 )
+from app.services import prompt_limits
 from app.services.targets import (
     active_goal,
     latest_weight_kg,
@@ -272,3 +274,15 @@ async def read_targets(user: CurrentUser, db: DbSession) -> TargetsOut:
         fat_g=goal.target_fat_g,
     )
     return to_targets_out(breakdown, profile.sex or "")
+
+
+@router.get("/profile/user-limit", response_model=PromptLimitOut)
+async def read_user_limit(user: CurrentUser, db: DbSession) -> PromptLimitOut:
+    """How many AI detections this account has spent, and whether it may spend another.
+
+    Read by the add-food screen to disable the photo and text inputs before a
+    user submits something the detect routes would only refuse. Advisory here;
+    `require_prompt_allowance` is what actually holds the line.
+    """
+    usage = await prompt_limits.read_usage(db, user.id, user.max_prompts)
+    return PromptLimitOut(allowed=usage.allowed, used=usage.used, limit=usage.limit)

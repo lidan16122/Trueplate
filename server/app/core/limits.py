@@ -1,4 +1,4 @@
-"""Per-user rate limiting, as a route dependency.
+"""Per-user limits on the endpoints that spend money, as route dependencies.
 
 A dependency rather than middleware, deliberately. Middleware runs before
 dependency resolution, so it has no authenticated user to key on — it would be
@@ -13,7 +13,8 @@ from datetime import UTC, datetime
 from fastapi import HTTPException, status
 
 from app.config import settings
-from app.core.deps import CurrentUser, RateLimiterDep
+from app.core.deps import CurrentUser, DbSession, RateLimiterDep
+from app.services import prompt_limits
 from app.stores.rate_limit import RateLimitResult
 
 # The scope name the AI detection endpoints share. Named here rather than
@@ -70,3 +71,28 @@ class RateLimit:
                 # intelligently instead of hammering.
                 headers=_rate_limit_headers(result),
             )
+
+
+async def require_prompt_allowance(user: CurrentUser, db: DbSession) -> None:
+    """Refuse a detection once the account's lifetime prompt cap is spent.
+
+    A dependency beside the limiter above, for the same reason and at the same
+    point: it resolves after auth, so it can key on the user, and it runs before
+    the handler, so a request over the cap never reaches a paid model call.
+
+    The add-food screen greys its photo and text inputs out from the same count,
+    but that is a courtesy to the user, not the enforcement — a cap the client
+    alone honours is one devtools away from not being a cap.
+
+    403 rather than 429: the limiter's 429 says "try again shortly", and this is
+    the opposite — no amount of waiting returns the allowance.
+    """
+    usage = await prompt_limits.read_usage(db, user.id, user.max_prompts)
+    if not usage.allowed:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"You have used all {usage.limit} AI detections on this account. "
+                "Barcode lookups still work."
+            ),
+        )

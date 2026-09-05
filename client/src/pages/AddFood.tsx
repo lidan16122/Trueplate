@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router";
 import { ErrorNote } from "@/components/ui";
 import { ApiError, api } from "@/lib/api";
 import { formatDayLabel, today } from "@/lib/format";
-import type { FoodDetectionResponse } from "@/types/api";
+import type { FoodDetectionResponse, PromptLimit } from "@/types/api";
 
 type Mode = "idle" | "text" | "barcode";
 
@@ -35,6 +35,27 @@ export function AddFood() {
   // express — by the time there was anywhere to type, the request was gone.
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
+
+  // The account's remaining AI allowance. Fetched on mount rather than held in
+  // context: it only moves when entries are saved from the confirm screen,
+  // which navigates back through here.
+  //
+  // Null — unanswered, or a failed check — counts as allowed. Blocking on the
+  // round trip would grey the camera out for a beat on every visit, and the
+  // detect routes refuse an over-cap request themselves, so the worst a wrong
+  // guess costs is one 403 the user sees as an error.
+  const [limit, setLimit] = useState<PromptLimit | null>(null);
+  useEffect(() => {
+    void api.profile
+      .userLimit()
+      .then(setLimit)
+      .catch(() => setLimit(null));
+  }, []);
+
+  const aiBlocked = limit !== null && !limit.allowed;
+  // Barcode is exempt everywhere below: it calls no model, so it costs nothing
+  // against the cap and stays the one way a capped user can still log a meal.
+  const capNote = `You have used all ${limit?.limit ?? 0} AI detections on this account. Barcode lookup still works.`;
 
   // The preview URL is handed to the confirm screen, which takes over revoking
   // it. Anything still held here when this screen goes away was never handed
@@ -68,13 +89,19 @@ export function AddFood() {
   };
 
   /** Show the photo and wait. No network call until the user asks for one. */
-  const stagePhoto = useCallback((file: File) => {
-    setError(null);
-    setPhotoFile(file);
-    // Replacing an earlier pick needs nothing extra: the effect above releases
-    // the previous object URL when this value changes.
-    setPreview(URL.createObjectURL(file));
-  }, []);
+  const stagePhoto = useCallback(
+    (file: File) => {
+      // Guards the drop handler and the hidden file input at once — the two
+      // ways a photo gets staged that a disabled button does not cover.
+      if (aiBlocked) return;
+      setError(null);
+      setPhotoFile(file);
+      // Replacing an earlier pick needs nothing extra: the effect above releases
+      // the previous object URL when this value changes.
+      setPreview(URL.createObjectURL(file));
+    },
+    [aiBlocked],
+  );
 
   const clearPhoto = useCallback(() => {
     setPhotoFile(null);
@@ -182,13 +209,14 @@ export function AddFood() {
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder={preview ? "no oil, half a portion" : "chicken, rice and broccoli"}
-                  className="resize-none rounded-card border border-line-dark bg-ink-2 px-4 py-3 text-lead text-white outline-none placeholder:text-on-dark-faint focus:border-accent"
+                  disabled={aiBlocked}
+                  className="resize-none rounded-card border border-line-dark bg-ink-2 px-4 py-3 text-lead text-white outline-none placeholder:text-on-dark-faint focus:border-accent disabled:opacity-40"
                 />
                 <button
                   onClick={photoFile ? submitPhoto : handleText}
                   // With a photo staged the note is optional, so the two-character
                   // floor applies only when the text *is* the whole input.
-                  disabled={busy !== null || (!photoFile && description.trim().length < 2)}
+                  disabled={aiBlocked || busy !== null || (!photoFile && description.trim().length < 2)}
                   className="h-12 rounded-card bg-white text-caption font-semibold text-ink transition-opacity disabled:opacity-40"
                 >
                   {busy !== null
@@ -235,9 +263,11 @@ export function AddFood() {
             ) : (
               <>
                 <div className="font-mono text-label tracking-[0.08em] text-on-dark-dim">
-                  CAMERA VIEWFINDER
+                  {aiBlocked ? "NO DETECTIONS LEFT" : "CAMERA VIEWFINDER"}
                 </div>
-                <div className="text-caption text-on-dark-faint">Point at the plate</div>
+                <div className="max-w-[260px] text-center text-caption leading-relaxed text-on-dark-faint">
+                  {aiBlocked ? capNote : "Point at the plate"}
+                </div>
               </>
             )}
           </div>
@@ -253,7 +283,8 @@ export function AddFood() {
           <div className="flex items-center justify-center gap-9">
             <button
               onClick={() => setMode(mode === "text" ? "idle" : "text")}
-              className="flex w-[76px] flex-col items-center gap-[7px]"
+              disabled={aiBlocked}
+              className="flex w-[76px] flex-col items-center gap-[7px] disabled:opacity-40"
             >
               <span
                 className={`flex h-12 w-12 items-center justify-center rounded-full border text-entry text-white transition-colors ${
@@ -272,8 +303,8 @@ export function AddFood() {
             */}
             <button
               onClick={() => (photoFile ? void submitPhoto() : fileRef.current?.click())}
-              disabled={busy !== null}
-              className="flex flex-col items-center gap-[7px]"
+              disabled={aiBlocked || busy !== null}
+              className="flex flex-col items-center gap-[7px] disabled:opacity-40"
               aria-label={photoFile ? "Analyse this photo" : "Take a photo"}
             >
               <span
@@ -306,7 +337,7 @@ export function AddFood() {
           {photoFile && (
             <button
               onClick={() => fileRef.current?.click()}
-              disabled={busy !== null}
+              disabled={aiBlocked || busy !== null}
               className="h-9 w-full text-label text-on-dark-dim transition-colors hover:text-white disabled:opacity-40"
             >
               Retake
@@ -351,8 +382,8 @@ export function AddFood() {
               }}
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
-              disabled={busy !== null}
-              className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3.5 rounded-2xl border border-dashed p-8 transition-colors ${
+              disabled={aiBlocked || busy !== null}
+              className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3.5 rounded-2xl border border-dashed p-8 transition-colors disabled:opacity-40 disabled:hover:border-hairline-strong disabled:hover:bg-panel ${
                 dragging
                   ? "border-accent bg-accent-wash"
                   : "border-hairline-strong bg-panel hover:border-accent hover:bg-accent-wash"
@@ -369,10 +400,13 @@ export function AddFood() {
                   <span className="flex h-13 w-13 items-center justify-center rounded-lg border-[1.5px] border-icon-faint">
                     <span className="h-4 w-4 rounded-full border-[1.5px] border-icon-faint" />
                   </span>
-                  <span className="text-title font-semibold text-ink">Drop a photo here</span>
+                  <span className="text-title font-semibold text-ink">
+                    {aiBlocked ? "No detections left" : "Drop a photo here"}
+                  </span>
                   <span className="max-w-[280px] text-center text-body leading-relaxed text-subtle">
-                    Or click to browse. Add a note on the right if you want to — they are sent
-                    together.
+                    {aiBlocked
+                      ? capNote
+                      : "Or click to browse. Add a note on the right if you want to — they are sent together."}
                   </span>
                 </>
               )}
@@ -403,13 +437,14 @@ export function AddFood() {
                     ? "no oil, half a portion — anything the photo cannot show"
                     : "chicken breast, a cup of rice, roasted broccoli"
                 }
-                className="flex-1 resize-none rounded-card border border-line-card px-4 py-3.5 text-item leading-relaxed text-ink outline-none placeholder:text-faint focus:border-accent"
+                disabled={aiBlocked}
+                className="flex-1 resize-none rounded-card border border-line-card px-4 py-3.5 text-item leading-relaxed text-ink outline-none placeholder:text-faint focus:border-accent disabled:cursor-default disabled:bg-readonly disabled:text-subtle"
               />
               <button
                 onClick={photoFile ? submitPhoto : handleText}
                 // With a photo staged the note is optional, so the two-character
                 // floor applies only when the text *is* the whole input.
-                disabled={busy !== null || (!photoFile && description.trim().length < 2)}
+                disabled={aiBlocked || busy !== null || (!photoFile && description.trim().length < 2)}
                 className="h-11.5 rounded-md bg-ink text-item font-semibold text-white transition-colors hover:bg-accent disabled:opacity-40"
               >
                 {busy === "photo"
@@ -452,6 +487,12 @@ export function AddFood() {
                 </button>
               </div>
             </div>
+
+            {aiBlocked && (
+              <div className="flex-none">
+                <ErrorNote>{capNote}</ErrorNote>
+              </div>
+            )}
 
             {error && (
               <div className="flex-none">
