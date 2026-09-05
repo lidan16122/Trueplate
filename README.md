@@ -132,10 +132,12 @@ scoped to `/api/v1/auth` so it is not attached to every API call. Only its SHA-2
 (sliding expiration: an active user is never forced to sign in again, a dormant session still ages
 out). The swap runs as a Redis Lua script so the check-and-swap is atomic.
 
-The tombstone a rotation leaves behind keeps its own, much longer life
-(`REFRESH_REUSE_TOMBSTONE_DAYS`, 30 days). Because expiry slides, an active family outlives every
+The tombstone a rotation leaves behind keeps its own, longer life
+(`REFRESH_REUSE_TOMBSTONE_DAYS`, 7 days). Because expiry slides, an active family outlives every
 token rotated out of it; a tombstone that expired with the session would make a late replay of a
 stolen token read as merely unknown — rejected, but with the family left alive and nothing logged.
+Seven days rather than thirty because the catch that matters lands in minutes — the victim's next
+refresh — and this only extends it to cover an attacker who waits.
 
 **Theft detection** — presenting an already-rotated token revokes that whole session family, not
 just the one token, on the assumption it was captured.
