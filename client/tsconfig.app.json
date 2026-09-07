@@ -21,7 +21,7 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
 
-    "types": ["vite/client", "vite-plugin-pwa/client"],
+    "types": ["vite/client"],
     "baseUrl": ".",
     "paths": { "@/*": ["./src/*"] }
   },

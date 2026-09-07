@@ -43,11 +43,6 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Vite / PWA generated
-client/dev-dist/
-client/public/sw.js
-client/public/workbox-*.js
-
 # Wrangler local state
 .wrangler/
 

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
-/* Self-hosted rather than Google's CDN link: a PWA has to render offline, and
-   a font that only arrives over the network is a flash of fallback text every
-   time the connection is bad. */
+/* Self-hosted rather than Google's CDN link: a font that only arrives over the
+   network is a third-party round trip and a flash of fallback text every time
+   the connection is bad. */
 @import "@fontsource/libre-franklin/400.css";
 @import "@fontsource/libre-franklin/500.css";
 @import "@fontsource/libre-franklin/600.css";
@@ -15,10 +15,9 @@
    and so on with no config file. */
 @theme {
   /* --- ink family: primary text, buttons, dark panels --- */
-  /* Also hard-coded in three places CSS variables cannot reach: the PWA
-     manifest's theme_color in vite.config.ts, the theme-color meta tag in
-     index.html, and the favicon's fill in public/favicon.svg. Change all four
-     together. */
+  /* Also hard-coded in two places CSS variables cannot reach: the theme-color
+     meta tag in index.html and the favicon's fill in public/favicon.svg. Change
+     all three together. */
   --color-ink: #14161a;
   --color-ink-2: #1e2126; /* hover on dark */
   --color-ink-3: #26292e;
