@@ -36,11 +36,8 @@ interface Env {
 // failing just before that is what turns an opaque platform error page into a
 // message naming the cause.
 //
-// `scheduled` below borrows it from the other side of the same fact. A tighter
-// ceiling there would not stop the wake — Render begins spinning up the moment
-// the request lands, whatever this Worker does with its own wait — but it would
-// fail the invocation on every cold tick, reporting an outage for the recovery
-// that was working.
+// `scheduled` borrows it: a tighter ceiling would not stop the wake, only fail
+// the invocation on every cold tick.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
 /** JSON with a `detail`, matching what the API sends and `readErrorMessage` in
@@ -134,57 +131,32 @@ export default {
   },
 
   /**
-   * Pings the API on a cron so `fetch` above never has to proxy a cold instance.
+   * Pings the API on a cron so a sleeping Render never answers a real request:
+   * sign-in is a top-level navigation, so a cold instance renders Render's own
+   * holding page in the user's window instead of redirecting to Google.
    *
-   * Render's free tier sleeps after fifteen minutes, and the wake is only
-   * *visible* on one path. `GoogleSignInButton` hands the address bar to
-   * /api/v1/auth/google/start as a top-level navigation, so a sleeping Render
-   * answers the browser with its own branded holding page instead of the 303 to
-   * Google — a successful response carrying the wrong body, which is exactly why
-   * nothing in `fetch` catches it. Every other call the client makes is a fetch,
-   * where the same page surfaces as a parse failure rather than as a full screen
-   * of someone else's branding at our own URL.
-   *
-   * The cadence lives in wrangler.jsonc and has to stay inside those fifteen
-   * minutes to be worth anything.
-   *
-   * Testing this locally needs one temporary edit: `wrangler dev --test-scheduled`
-   * exposes /__scheduled over HTTP, but that path is not in `run_worker_first`,
-   * so the assets binding answers it with the SPA and this handler never runs.
-   * Add it to that list for the length of the test. A real cron invocation never
-   * touches the asset router, which is why the list stays narrow in the repo.
+   * Local `--test-scheduled` reaches this only once /__scheduled is in
+   * `run_worker_first`; otherwise the assets binding answers it.
    */
-  // `unknown` rather than Cloudflare's ScheduledController: nothing here reads
-  // the controller, and typing it properly means adding @cloudflare/workers-types
-  // and giving up the empty `types` in tsconfig.worker.json, which is deliberate
-  // and explained there. The `_` prefix is what noUnusedParameters accepts.
+  // `unknown` rather than Cloudflare's ScheduledController, which would mean
+  // adding @cloudflare/workers-types and giving up the empty `types` in
+  // tsconfig.worker.json.
   async scheduled(_controller: unknown, env: Env): Promise<void> {
-    // Throw rather than return quietly. `fetch` above answers this same missing
-    // binding with a 500 on every request, so the misconfiguration is loud
-    // overall — but a cron has no caller, so returning early here would report a
-    // green invocation that pinged nothing. Failing is the only signal this
-    // handler has of its own.
+    // A cron has no caller, so returning early would report a green invocation
+    // that pinged nothing.
     if (!env.API_ORIGIN) {
       throw new Error("API_ORIGIN is not configured on the Worker");
     }
 
-    // Liveness, not /health/ready. Keeping the container up is the entire job,
-    // and readiness would open a Neon connection and an Upstash one every ten
-    // minutes to answer a question this handler does not act on. Same split
-    // render.yaml's healthCheckPath already makes, for a neighbouring reason.
-    //
-    // API_ORIGIN directly, never this Worker's own hostname: that would be a
-    // Worker subrequesting itself, and it would keep Cloudflare warm rather than
-    // Render.
+    // Liveness, not /health/ready: waking the container is the whole job, and
+    // readiness would wake Neon and Upstash with it. API_ORIGIN directly, since
+    // this Worker's own hostname would keep Cloudflare warm instead of Render.
     const response = await fetch(new URL("/health", env.API_ORIGIN), {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
 
-    // Logged, not thrown on. Any status means the round trip completed and
-    // something is serving — including Render's own holding page mid-wake, which
-    // is this handler succeeding rather than failing, whatever its status says.
-    // A rejection is the other case and is left to throw: there the ping learned
-    // nothing at all, and that is worth a failed invocation.
+    // Any status means the round trip completed, holding page included, so only
+    // a rejection is worth failing the invocation over.
     console.log(`keep-warm: /health returned ${response.status}`);
   },
 };

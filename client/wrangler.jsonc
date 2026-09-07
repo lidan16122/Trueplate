@@ -24,15 +24,9 @@
     "binding": "ASSETS"
   },
 
-  // Keeps the Render instance from sleeping. Ten minutes against Render's
-  // fifteen-minute idle window: the margin is the point, absorbing a tick that
-  // Cloudflare delays without the instance reaching the spin-down threshold.
-  // worker/index.ts carries what actually goes wrong when it does sleep, and the
-  // README the instance-hour accounting.
-  //
-  // This string is the dial. "*/10 6-23 * * *" leaves six of the twenty-four
-  // hours cold, so it saves about a quarter of the bill and costs a slow first
-  // sign-in of the morning. Crons run in UTC, not the user's timezone.
+  // Ten minutes against Render's fifteen-minute idle window, so a delayed tick
+  // still lands before the instance sleeps. "*/10 6-23 * * *" leaves six hours
+  // cold and saves about a quarter of the bill; crons run in UTC.
   "triggers": {
     "crons": ["*/10 * * * *"]
   }
