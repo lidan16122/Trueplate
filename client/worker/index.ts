@@ -36,8 +36,8 @@ interface Env {
 // failing just before that is what turns an opaque platform error page into a
 // message naming the cause.
 //
-// `scheduled` borrows it: a tighter ceiling would not stop the wake, only fail
-// the invocation on every cold tick.
+// `scheduled` borrows it: a tighter ceiling fails the tick without stopping the
+// wake it was waiting on.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
 /** JSON with a `detail`, matching what the API sends and `readErrorMessage` in
@@ -131,32 +131,26 @@ export default {
   },
 
   /**
-   * Pings the API on a cron so a sleeping Render never answers a real request:
-   * sign-in is a top-level navigation, so a cold instance renders Render's own
-   * holding page in the user's window instead of redirecting to Google.
-   *
-   * Local `--test-scheduled` reaches this only once /__scheduled is in
-   * `run_worker_first`; otherwise the assets binding answers it.
+   * Keeps Render awake, so signing in never lands on its holding page instead of
+   * Google. Local `--test-scheduled` needs /__scheduled in `run_worker_first`.
    */
-  // `unknown` rather than Cloudflare's ScheduledController, which would mean
-  // adding @cloudflare/workers-types and giving up the empty `types` in
-  // tsconfig.worker.json.
+  // Typing the controller would pull in @cloudflare/workers-types and end the
+  // empty `types` in tsconfig.worker.json.
   async scheduled(_controller: unknown, env: Env): Promise<void> {
-    // A cron has no caller, so returning early would report a green invocation
-    // that pinged nothing.
+    // A cron has no caller, so returning early would report success having
+    // pinged nothing.
     if (!env.API_ORIGIN) {
       throw new Error("API_ORIGIN is not configured on the Worker");
     }
 
-    // Liveness, not /health/ready: waking the container is the whole job, and
-    // readiness would wake Neon and Upstash with it. API_ORIGIN directly, since
-    // this Worker's own hostname would keep Cloudflare warm instead of Render.
+    // Liveness, not /health/ready: waking the container is the whole job. This
+    // Worker's own hostname would keep Cloudflare warm instead of Render.
     const response = await fetch(new URL("/health", env.API_ORIGIN), {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
 
-    // Any status means the round trip completed, holding page included, so only
-    // a rejection is worth failing the invocation over.
+    // Any status means the round trip completed, so only a rejection is worth
+    // failing the invocation over.
     console.log(`keep-warm: /health returned ${response.status}`);
   },
 };
