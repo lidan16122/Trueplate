@@ -36,9 +36,11 @@ interface Env {
 // failing just before that is what turns an opaque platform error page into a
 // message naming the cause.
 //
-// `scheduled` below borrows it from the other side of the same fact: that handler
-// is the one doing the waking, and a tighter ceiling there would abort the very
-// spin-up its own ping just triggered.
+// `scheduled` below borrows it from the other side of the same fact. A tighter
+// ceiling there would not stop the wake — Render begins spinning up the moment
+// the request lands, whatever this Worker does with its own wait — but it would
+// fail the invocation on every cold tick, reporting an outage for the recovery
+// that was working.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
 /** JSON with a `detail`, matching what the API sends and `readErrorMessage` in
@@ -152,11 +154,16 @@ export default {
    * Add it to that list for the length of the test. A real cron invocation never
    * touches the asset router, which is why the list stays narrow in the repo.
    */
+  // `unknown` rather than Cloudflare's ScheduledController: nothing here reads
+  // the controller, and typing it properly means adding @cloudflare/workers-types
+  // and giving up the empty `types` in tsconfig.worker.json, which is deliberate
+  // and explained there. The `_` prefix is what noUnusedParameters accepts.
   async scheduled(_controller: unknown, env: Env): Promise<void> {
-    // Throw rather than return quietly. A keep-warm that never fires has no
-    // symptom of its own — the next person to sign in pays for it, hours later
-    // and somewhere else — and a failed invocation is the only place a missing
-    // binding can announce itself.
+    // Throw rather than return quietly. `fetch` above answers this same missing
+    // binding with a 500 on every request, so the misconfiguration is loud
+    // overall — but a cron has no caller, so returning early here would report a
+    // green invocation that pinged nothing. Failing is the only signal this
+    // handler has of its own.
     if (!env.API_ORIGIN) {
       throw new Error("API_ORIGIN is not configured on the Worker");
     }
@@ -173,10 +180,11 @@ export default {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
 
-    // Logged, not thrown on. A non-2xx still means the request reached Render
-    // and started the spin-up, and Render's own holding page is what answers
-    // mid-wake — so failing the invocation on it would cry outage during the
-    // exact recovery this handler exists to perform.
+    // Logged, not thrown on. Any status means the round trip completed and
+    // something is serving — including Render's own holding page mid-wake, which
+    // is this handler succeeding rather than failing, whatever its status says.
+    // A rejection is the other case and is left to throw: there the ping learned
+    // nothing at all, and that is worth a failed invocation.
     console.log(`keep-warm: /health returned ${response.status}`);
   },
 };
