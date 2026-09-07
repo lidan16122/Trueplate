@@ -46,6 +46,13 @@ pnpm-debug.log*
 # Wrangler local state
 .wrangler/
 
+# The Worker's local secrets — locally, what `wrangler secret put` holds in
+# production. It matches neither .env, .env.* nor *.local above, so nothing here
+# caught it, and it is the one file in the client whose accidental commit would
+# publish a credential.
+.dev.vars
+.dev.vars.*
+
 # ---------- Editors / OS ----------
 .vscode/*
 !.vscode/extensions.json
