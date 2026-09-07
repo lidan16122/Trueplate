@@ -25,8 +25,8 @@
   },
 
   // Ten minutes against Render's fifteen-minute idle window, so a delayed tick
-  // still lands before the instance sleeps. "*/10 6-23 * * *" leaves six hours
-  // cold and saves about a quarter of the bill; crons run in UTC.
+  // still lands before the instance sleeps. The README carries the instance-hour
+  // cost and the narrower window that trades it back.
   "triggers": {
     "crons": ["*/10 * * * *"]
   }

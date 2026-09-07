@@ -36,8 +36,8 @@ interface Env {
 // failing just before that is what turns an opaque platform error page into a
 // message naming the cause.
 //
-// `scheduled` borrows it: a tighter ceiling fails the tick without stopping the
-// wake it was waiting on.
+// `scheduled` borrows it: Render's spin-up starts when the request lands, so a
+// tighter ceiling would fail the tick without stopping the wake.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
 /** JSON with a `detail`, matching what the API sends and `readErrorMessage` in
@@ -131,8 +131,9 @@ export default {
   },
 
   /**
-   * Keeps Render awake, so signing in never lands on its holding page instead of
-   * Google. Local `--test-scheduled` needs /__scheduled in `run_worker_first`.
+   * Keeps Render awake, so a cold instance does not answer sign-in with its own
+   * holding page. Local `--test-scheduled` needs /__scheduled added to
+   * `run_worker_first` for the length of the test.
    */
   // Typing the controller would pull in @cloudflare/workers-types and end the
   // empty `types` in tsconfig.worker.json.
@@ -143,8 +144,8 @@ export default {
       throw new Error("API_ORIGIN is not configured on the Worker");
     }
 
-    // Liveness, not /health/ready: waking the container is the whole job. This
-    // Worker's own hostname would keep Cloudflare warm instead of Render.
+    // Liveness, not /health/ready: waking the container is the whole job.
+    // API_ORIGIN directly, since our own hostname would keep Cloudflare warm.
     const response = await fetch(new URL("/health", env.API_ORIGIN), {
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
