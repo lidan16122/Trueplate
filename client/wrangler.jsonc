@@ -22,5 +22,12 @@
     // Lets the Worker fall back to the assets for anything that reaches it
     // outside the rule above.
     "binding": "ASSETS"
+  },
+
+  // Ten minutes against Render's fifteen-minute idle window, so a delayed tick
+  // still lands before the instance sleeps. The README carries the instance-hour
+  // cost and the narrower window that trades it back.
+  "triggers": {
+    "crons": ["*/10 * * * *"]
   }
 }

@@ -35,6 +35,9 @@ interface Env {
 // through the door. Cloudflare severs a subrequest near 100 seconds regardless;
 // failing just before that is what turns an opaque platform error page into a
 // message naming the cause.
+//
+// `scheduled` borrows it: Render's spin-up starts when the request lands, so a
+// tighter ceiling would fail the tick without stopping the wake.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
 /** JSON with a `detail`, matching what the API sends and `readErrorMessage` in
@@ -125,5 +128,30 @@ export default {
     }
 
     return response;
+  },
+
+  /**
+   * Keeps Render awake, so a cold instance does not answer sign-in with its own
+   * holding page. Local `--test-scheduled` needs /__scheduled added to
+   * `run_worker_first` for the length of the test.
+   */
+  // Typing the controller would pull in @cloudflare/workers-types and end the
+  // empty `types` in tsconfig.worker.json.
+  async scheduled(_controller: unknown, env: Env): Promise<void> {
+    // A cron has no caller, so returning early would report success having
+    // pinged nothing.
+    if (!env.API_ORIGIN) {
+      throw new Error("API_ORIGIN is not configured on the Worker");
+    }
+
+    // Liveness, not /health/ready: waking the container is the whole job.
+    // API_ORIGIN directly, since our own hostname would keep Cloudflare warm.
+    const response = await fetch(new URL("/health", env.API_ORIGIN), {
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+
+    // Any status means the round trip completed, so only a rejection is worth
+    // failing the invocation over.
+    console.log(`keep-warm: /health returned ${response.status}`);
   },
 };

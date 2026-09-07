@@ -46,6 +46,11 @@ pnpm-debug.log*
 # Wrangler local state
 .wrangler/
 
+# The Worker's local secrets, matched by none of the patterns above — the one
+# file here whose accidental commit would publish a credential.
+.dev.vars
+.dev.vars.*
+
 # ---------- Editors / OS ----------
 .vscode/*
 !.vscode/extensions.json
