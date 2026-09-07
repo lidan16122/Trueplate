@@ -6,7 +6,7 @@ You photograph a meal, an AI identifies the foods and estimates portions in gram
 database resolves the actual calories and macros. **The model never produces a calorie number** —
 it contributes labels and mass, and every figure shown to a user traces back to a database row.
 
-Responsive web app, installable as a PWA.
+Responsive web app.
 
 ---
 
@@ -14,7 +14,7 @@ Responsive web app, installable as a PWA.
 
 | Layer | Choice |
 |---|---|
-| Frontend | React 19 + TypeScript 5, Vite, Tailwind v4, React Router 7, `vite-plugin-pwa`, Recharts |
+| Frontend | React 19 + TypeScript 5, Vite, Tailwind v4, React Router 7, Recharts |
 | Backend | Python 3.14, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic |
 | Database | PostgreSQL 17 via psycopg3 |
 | Cache / sessions | Redis 8 (async redis-py) |
