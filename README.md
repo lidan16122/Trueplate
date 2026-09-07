@@ -245,6 +245,19 @@ loads `libzbar.so.0` at import, `app.main` reaches it through the router, and Re
 runtime has no `apt` step. Without that system package the app does not fail to scan a
 barcode — it fails to boot.
 
+**The Worker keeps the API awake.** A Cloudflare Cron Trigger in `client/wrangler.jsonc`
+pings `/health` every ten minutes, inside the fifteen-minute idle window that would
+otherwise spin the free instance down. Without it the wake is not merely slow, it is
+*visible*: sign-in is a top-level navigation to `/api/v1/auth/google/start`, so a sleeping
+Render answers the browser with its own branded holding page instead of the redirect to
+Google. It pings liveness and not `/health/ready` — the job is to keep the container up,
+not to wake Neon and Upstash every ten minutes as well.
+
+The cost is instance-hours. Always-warm spends close to the whole free monthly allowance,
+which works only while this is the only free service on the account; narrowing the cron to
+`"*/10 6-23 * * *"` gives back roughly a quarter of it in exchange for a cold start on the
+first sign-in of the early morning. Cloudflare crons run in UTC.
+
 Production start command, for reference — no `--reload`, and `--host 0.0.0.0` because uvicorn
 otherwise binds `127.0.0.1` and nothing outside the container can reach it:
 
