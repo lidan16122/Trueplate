@@ -40,10 +40,8 @@ interface Env {
 // tighter ceiling would fail the tick without stopping the wake.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
-/** JSON with a `detail`, matching what the API sends and `readErrorMessage` in
- *  api.ts reads. Every failure here goes through this: the client parses every
- *  response as JSON, so an HTML or bare-text body surfaces to the user as a
- *  parse failure that names nothing. */
+/** Match the API's JSON error shape, read by `readErrorMessage` in src/services/http.ts.
+ *  This keeps upstream failures readable in the client. */
 function errorResponse(status: number, detail: string): Response {
   return new Response(JSON.stringify({ detail }), {
     status,
@@ -90,10 +88,8 @@ export default {
         signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
       });
     } catch (error) {
-      // Without this the rejection escapes and Cloudflare serves its own HTML
-      // error page — which api.ts cannot parse, leaving the user with a bare
-      // status and no cause. 502/504 because this Worker is a gateway, and the
-      // failure is the upstream's, not the request's.
+      // Convert upstream failures to JSON so src/services/http.ts can show the cause.
+      // Gateway status codes distinguish upstream failure from an invalid request.
       const timedOut = error instanceof Error && error.name === "TimeoutError";
       return timedOut
         ? errorResponse(504, "The API did not respond in time")

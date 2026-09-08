@@ -29,10 +29,11 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import settings
+from app.db import transaction
 from app.db.loop import psycopg_loop_factory
 from app.db.session import engine
-from app.services import imaging
-from app.services.detection import PROMPT_FINGERPRINT, DetectionError, DetectionService
+from app.services.detection import imaging
+from app.services.detection.detector import PROMPT_FINGERPRINT, DetectionError, DetectionService
 from app.services.nutrition import (
     NutritionResolver,
     OpenFoodFactsClient,
@@ -78,7 +79,7 @@ async def _probe(path: Path, note: str | None) -> int:
             finally:
                 # Commits whatever the resolver wrote back to `foods` even on a
                 # failure part-way down the item list.
-                await db.commit()
+                await transaction.commit(db)
     finally:
         await close_http_client()
         await engine.dispose()

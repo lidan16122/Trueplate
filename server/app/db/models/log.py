@@ -12,7 +12,7 @@ from app.db.base import (
     TimestampMixin,
     UUIDPrimaryKeyMixin,
 )
-from app.enums import MealType, meal_sort_key
+from app.models.enums import MealType, meal_sort_key
 
 if TYPE_CHECKING:
     from app.db.models.user import User

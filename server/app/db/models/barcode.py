@@ -5,7 +5,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, NutritionPer100gMixin, TimestampMixin
-from app.enums import NutritionSource
+from app.models.enums import NutritionSource
 
 
 class BarcodeProduct(TimestampMixin, NutritionPer100gMixin, Base):

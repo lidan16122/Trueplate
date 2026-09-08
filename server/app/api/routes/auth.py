@@ -1,10 +1,8 @@
 import logging
-from dataclasses import dataclass
 from hmac import compare_digest
 
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.cookies import (
     clear_auth_cookies,
@@ -13,30 +11,28 @@ from app.api.cookies import (
     set_auth_cookies,
     set_oauth_state_cookie,
 )
+from app.api.deps import CurrentUser, DbSession, Denylist, RefreshTokens, TokenClaims
+from app.api.errors import translate_service_error
 from app.config import settings
-from app.core.deps import CurrentUser, DbSession, Denylist, RefreshTokens, TokenClaims
-from app.core.devices import describe_device
-from app.core.security import create_access_token
-from app.db.models import User
 from app.schemas.auth import (
     GoogleSignInRequest,
     MessageResponse,
     SessionResponse,
     UserOut,
 )
-from app.services.auth_service import (
-    EmailAlreadyRegisteredError,
-    has_completed_onboarding,
-    upsert_google_user,
-)
-from app.services.google_oauth import (
+from app.services.auth import sessions
+from app.services.auth.google_oauth import (
     GoogleAuthError,
     GoogleTokenExchangeError,
     begin_authorization,
     exchange_code_for_id_token,
-    verify_google_credential,
 )
-from app.stores.refresh_tokens import RefreshTokenStore
+from app.services.auth.identity import (
+    EmailAlreadyRegisteredError,
+    has_completed_onboarding,
+)
+from app.services.auth.sessions import establish_session, rotate_session
+from app.services.errors import NotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -52,58 +48,6 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-@dataclass(frozen=True, slots=True)
-class _EstablishedSession:
-    """Everything a caller needs, in whichever shape it answers in."""
-
-    user: User
-    access_token: str
-    refresh_token: str
-    needs_onboarding: bool
-
-
-async def _establish_session(
-    db: AsyncSession,
-    refresh_tokens: RefreshTokenStore,
-    request: Request,
-    credential: str,
-) -> _EstablishedSession:
-    """Turn a Google ID token into a session, minus the response.
-
-    Shared by the two ways a credential reaches us: a browser posting it as JSON,
-    and our own token exchange returning one after a redirect. Everything between
-    the credential and the response is identical for both; only the shape of the
-    answer differs, so the response is deliberately not built here — the caller
-    decides whether the cookies hang off a JSON body or a redirect.
-
-    Raises ``GoogleAuthError`` and ``EmailAlreadyRegisteredError`` rather than
-    translating them, because the right *kind* of response differs per caller
-    too: a 401 body is correct for an API client, and would be rendered as bare
-    JSON in the user's own window for a redirect.
-    """
-    identity = await verify_google_credential(credential)
-    resolved = await upsert_google_user(db, identity)
-
-    user_agent = request.headers.get("user-agent", "")
-    issued = await refresh_tokens.create_session(
-        user_id=str(resolved.user.id),
-        device_label=describe_device(user_agent),
-        user_agent=user_agent,
-        ip=_client_ip(request),
-    )
-    access = create_access_token(user_id=str(resolved.user.id), session_id=issued.family_id)
-
-    needs_onboarding = resolved.is_new_user or not await has_completed_onboarding(
-        db, resolved.user.id
-    )
-    return _EstablishedSession(
-        user=resolved.user,
-        access_token=access.token,
-        refresh_token=issued.raw_token,
-        needs_onboarding=needs_onboarding,
-    )
-
-
 @router.post("/google", response_model=SessionResponse)
 async def sign_in_with_google(
     payload: GoogleSignInRequest,
@@ -114,7 +58,13 @@ async def sign_in_with_google(
 ) -> SessionResponse:
     """Exchange a Google ID token for a session."""
     try:
-        session = await _establish_session(db, refresh_tokens, request, payload.credential)
+        session = await establish_session(
+            db,
+            refresh_tokens,
+            payload.credential,
+            user_agent=request.headers.get("user-agent", ""),
+            ip=_client_ip(request),
+        )
     except GoogleAuthError as exc:
         # One fixed message. `str(exc)` distinguishes "unexpected issuer" from
         # "email is not verified" from "GOOGLE_CLIENT_ID is not configured on
@@ -157,7 +107,8 @@ def _signin_redirect(reason: str = "") -> RedirectResponse:
     rewritten to the API's.
 
     The vocabulary of reasons is small and closed, and
-    ``client/src/pages/SignIn.tsx`` maps it to sentences rather than rendering it:
+    ``client/src/features/auth/components/SignIn.tsx`` maps it to sentences
+    rather than rendering it:
     state | google | exchange | verification | email_in_use | unavailable, plus
     the empty string for a user who simply pressed Cancel.
     """
@@ -269,7 +220,13 @@ async def complete_google_sign_in(
         return _abandon_sign_in("exchange")
 
     try:
-        session = await _establish_session(db, refresh_tokens, request, id_token_value)
+        session = await establish_session(
+            db,
+            refresh_tokens,
+            id_token_value,
+            user_agent=request.headers.get("user-agent", ""),
+            ip=_client_ip(request),
+        )
     except GoogleAuthError as exc:
         logger.warning("Google credential rejected: %s", exc)
         return _abandon_sign_in("verification")
@@ -278,7 +235,7 @@ async def complete_google_sign_in(
     except Exception:
         # A broad catch, which is right here and nowhere else in this app.
         # Postgres and the refresh-token store are both reachable from
-        # `_establish_session`, and an exception escaping this route is not a 500
+        # `establish_session`, and an exception escaping this route is not a 500
         # some API client parses — it is a bare error page in the user's own
         # window, which is the single thing this route promises never to produce.
         # Without this the promise is false for every failure we did not name.
@@ -293,7 +250,7 @@ async def complete_google_sign_in(
     # one who does not need it away from /onboarding — guessing wrong in that
     # direction strands them in the wizard with no way forward.
     #
-    # These paths belong to client/src/router.tsx and nothing mechanical ties the
+    # These paths belong to client/src/app/router.tsx and nothing mechanical ties the
     # two together. The tests asserting the literal strings are the only thing
     # that would notice a rename.
     destination = "/onboarding" if session.needs_onboarding else "/today"
@@ -333,11 +290,10 @@ async def refresh_session(
     if not raw_token:
         return _expired_session_response("No refresh token")
 
-    result = await refresh_tokens.rotate(raw_token)
+    result, access_token = await rotate_session(refresh_tokens, raw_token)
 
     if result.status == "ok":
-        access = create_access_token(user_id=result.user_id, session_id=result.family_id)
-        set_auth_cookies(response, access_token=access.token, refresh_token=result.raw_token)
+        set_auth_cookies(response, access_token=access_token, refresh_token=result.raw_token)
         return MessageResponse(detail="Session refreshed")
 
     if result.status == "retry":
@@ -401,23 +357,14 @@ async def revoke_session(
     denylist: Denylist,
 ) -> MessageResponse:
     """Sign a specific device out."""
-    # Ownership is part of the revoke itself, not a check in front of it: the
-    # script compares the family's `user_id` before touching anything, so a
-    # family belonging to someone else is a no-op by construction. A separate
-    # check here would leave a window between the check and the revoke, and
-    # would be a check someone could later forget.
-    revoked = await refresh_tokens.revoke_family(family_id, owner_id=str(user.id))
-    if not revoked:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
+    try:
+        is_current = await sessions.revoke_session(
+            refresh_tokens, denylist, family_id, str(user.id), claims
+        )
+    except NotFoundError as exc:
+        raise translate_service_error(exc) from exc
 
-    if family_id == claims.session_id:
-        # Revoking the session you are currently using: deny the access token
-        # too. Otherwise "sign this device out" leaves the token in the caller's
-        # own cookie working for up to another 15 minutes. A no-op unless
-        # instant revocation is switched on.
-        await denylist.revoke(claims.jti, ttl_seconds=settings.access_token_ttl_seconds)
-
-    if family_id == claims.session_id:
+    if is_current:
         clear_auth_cookies(response)
 
     return MessageResponse(detail="Session revoked")

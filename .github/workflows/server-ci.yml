@@ -42,13 +42,8 @@ jobs:
       # until the checkout lands.
       - uses: actions/checkout@v5
 
-      # Not optional, and not obvious from any test file. app/services/barcode.py
-      # imports pyzbar at module scope, app.main reaches it through the router, and
-      # tests/conftest.py imports app.main — so pyzbar sits on the import path of
-      # every single test. The Linux wheel is a 32 KB ctypes shim with no library
-      # bundled; the Windows wheels carry the DLLs, which is why this never surfaces
-      # locally. Without this package the suite fails at *collection* and zero tests
-      # run — a far more confusing failure than a red test.
+      # app/services/detection/barcode.py imports pyzbar through app.main during
+      # test collection. Linux needs libzbar installed separately for that import.
       - name: Install libzbar (pyzbar's native dependency)
         run: sudo apt-get update && sudo apt-get install -y libzbar0
 

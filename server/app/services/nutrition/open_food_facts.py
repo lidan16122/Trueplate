@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
-from app.enums import NutritionSource
+from app.models.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
 from app.services.nutrition.matches import kcal_from
 from app.services.nutrition.relevance import is_relevant

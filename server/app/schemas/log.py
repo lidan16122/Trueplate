@@ -4,7 +4,7 @@ from typing import NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.enums import DetectionMethod, MealType, NutritionSource
+from app.models.enums import DetectionMethod, MealType, NutritionSource
 from app.schemas.detection import NutritionFacts
 
 # The design shows confidence as two states, not a percentage: "Fairly sure"

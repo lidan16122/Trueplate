@@ -4,7 +4,8 @@ Nutrition and calorie tracking, built around logging food by photo.
 
 You photograph a meal, an AI identifies the foods and estimates portions in grams, and a nutrition
 database resolves the actual calories and macros. **The model never produces a calorie number** —
-it contributes labels and mass, and every figure shown to a user traces back to a database row.
+it contributes labels and mass, and food nutrition is resolved from source records. Personal
+calorie targets are calculated separately from profile inputs.
 
 Responsive web app.
 
@@ -17,9 +18,9 @@ Responsive web app.
 | Frontend | React 19 + TypeScript 5, Vite, Tailwind v4, React Router 7, Recharts |
 | Backend | Python 3.14, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic |
 | Database | PostgreSQL 17 via psycopg3 |
-| Cache / sessions | Redis 8 (async redis-py) |
+| Sessions / request limits | Redis 8 (async redis-py); detection and product caches live in PostgreSQL |
 | Auth | Google OAuth 2.0 authorization-code redirect → `google-auth` verification → JWT access cookie + rotated opaque refresh token |
-| AI | Claude API, tool use with a strict JSON schema (not wired up yet) |
+| AI | Claude API through the Anthropic SDK, strict food-detection tool schema, photo and text workflows |
 
 Monorepo: `client/` and `server/`. One PR spans both sides, which is what you want for a solo
 project — the alternative is coordinating version bumps across two repos for every feature.
@@ -28,65 +29,70 @@ project — the alternative is coordinating version bumps across two repos for e
 
 ## Quick start
 
-Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/),
-[uv](https://docs.astral.sh/uv/), and the Node version in `client/.nvmrc` — CI reads that
-same file, so it is the one that has to match.
+Prerequisites: [uv](https://docs.astral.sh/uv/), the Node version in `client/.nvmrc`, and
+PostgreSQL/Redis connections. [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+is optional: `docker-compose.yml` supplies local PostgreSQL and Redis instead of managed services.
+The commands below run from the repository root.
 
 ```bash
 cp .env.example .env
 cp .env.example server/.env
 ```
 
-Two copies on purpose: `docker compose` reads the root one to size the containers, the app
-reads `server/.env` and nothing else.
+Two copies on purpose: `docker compose` reads the root one for container credentials and ports;
+the app loads `server/.env`, with process environment variables taking precedence.
 
 Generate a signing key and paste it into `server/.env` as `JWT_SECRET_KEY` — the command is in
 `.env.example` beside the variable itself. The app refuses to start without it, rather than
 falling back to a default that would sign real tokens with a value published in this repo.
 
-Start Postgres and Redis:
+For local databases, start Postgres and Redis; skip this when using managed connections:
 
 ```bash
 docker compose up -d
 ```
 
 Using managed instances instead (Neon, Upstash) rather than Docker? Two things bite. `DATABASE_URL`
-needs the `postgresql+psycopg://` prefix, not `postgresql://`, or SQLAlchemy selects the sync
-driver and every request blocks the event loop. And a free tier that scales to zero makes the
-first request after an idle period slower than the default timeouts allow, which presents as an
-outage — `.env.example` carries the overrides to uncomment.
+needs the `postgresql+psycopg://` prefix so SQLAlchemy selects the configured async-capable
+psycopg driver. Set `DATABASE_URL` and `REDIS_URL` in `server/.env`; use `rediss://` when the
+Redis provider requires TLS. `.env.example` lists timeout overrides for managed connections.
 
-Migrate and seed:
+Install server dependencies and apply migrations to the configured database:
 
 ```bash
-cd server && uv sync && uv run alembic upgrade head && uv run python -m scripts.seed
+uv sync --directory server --locked
+uv run --directory server alembic upgrade head
 ```
+
+Optionally load development reference foods with `uv run --directory server python -m scripts.seed`.
+These are development figures tagged as seed data, not verified upstream records.
 
 Run the API:
 
 ```bash
-cd server && uv run uvicorn app.main:app --reload --port 8000
+uv run --directory server uvicorn app.main:app --reload --port 8000
 ```
 
 Create `client/.env` from `client/.env.example` and run the client:
 
 ```bash
-cd client && npm install && npm run dev
+npm --prefix client ci
+npm --prefix client run dev
 ```
 
 Open <http://localhost:5173>. The Vite dev server proxies `/api` to `:8000`, so the browser sees
 one origin and the auth cookies work with no CORS configuration at all.
 
-> `fastapi dev app/main.py` also works on macOS and Linux, but not on Windows: it prints a
-> Unicode banner that crashes on the default console codepage
-> (`UnicodeEncodeError: 'charmap' codec`). The uvicorn command above works everywhere, which is
-> why it is the one written down.
+> Use the uvicorn command above on Windows. `fastapi dev` has failed here while printing its
+> banner to the console codepage (`UnicodeEncodeError: 'charmap' codec`).
 
 ---
 
 ## Setting up Google Sign-In
 
-Nothing signs in until you create an OAuth client. It is free and takes about five minutes.
+Configure a Google OAuth web client before signing in. Google's
+[web-server OAuth guide](https://developers.google.com/identity/protocols/oauth2/web-server)
+describes client registration and redirect-URI requirements.
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/) and create a project
    (e.g. *Trueplate*).
@@ -105,14 +111,14 @@ Nothing signs in until you create an OAuth client. It is free and takes about fi
    > URI, which Google matches against this entry byte for byte. Get it wrong and you never
    > reach the app at all — Google shows its own `redirect_uri_mismatch` page. Authorised
    > JavaScript origins are not used by this flow and can stay empty.
-4. Copy the **Client ID** and the **Client secret** into the repo-root `.env`:
+4. Copy the **Client ID** and the **Client secret** into `server/.env`:
    - `GOOGLE_CLIENT_ID` — the audience every ID token is checked against
    - `GOOGLE_CLIENT_SECRET` — sent server-to-server when the code is exchanged
    - `GOOGLE_REDIRECT_URI` — the same string you pasted into the Console
 
-Nothing Google-related belongs in `client/.env`. The browser never sees the client id now, and
-the secret must never go anywhere Vite can inline it — every `VITE_*` variable ends up in the
-public bundle.
+This flow needs no Google variables in `client/.env`. The client ID is public and appears in
+the authorization URL; the client secret stays on the server and must never be put in a
+`VITE_*` variable exposed to the browser bundle.
 
 Until it is configured the sign-in screen renders normally, and pressing the button returns you
 to it with *"Google sign-in is unavailable right now."*
@@ -120,6 +126,8 @@ to it with *"Google sign-in is unavailable right now."*
 ---
 
 ## How auth works
+
+The values below are the defaults in `server/app/config.py`; deployments can override them.
 
 **Access token** — a 15-minute HS256 JWT in an httpOnly, Secure, SameSite=Lax cookie at `/`.
 Verified by signature alone, so the common path never touches Redis. Never in `localStorage`: a
@@ -151,42 +159,36 @@ Two things make that safe against false positives, and both are load-bearing:
   N failures produce one rotation rather than N.
 
 Without either, opening a second tab signs the user out. There are tests for exactly that
-(`tests/test_refresh_tokens.py::TestConcurrency`).
+(`server/tests/test_refresh_tokens.py::TestConcurrency`).
 
 Each refresh family carries its own id and device metadata, which is what makes per-device
 revocation (`DELETE /api/v1/auth/sessions/{family_id}`) possible without disturbing the
 user's other devices.
 
-**CSRF** is deferred for the API and enforced on the one route that cannot defer it.
-`SameSite=Lax` blocks cross-site POSTs, which covers everything the client calls. The exception
-is the sign-in redirect: Google returns the user from `accounts.google.com`, so the request that
-creates a session arrives cross-site. `GET /api/v1/auth/google/callback` checks a `state` it
-minted itself and stored in a short-lived httpOnly cookie, compared in constant time and used
-once.
+**Request-origin protection.** The API currently relies on its cookie SameSite policy and
+does not implement a general CSRF-token check. The OAuth callback additionally compares a
+random `state` with a short-lived httpOnly cookie and clears that cookie after use.
 
-**Why that callback is a GET**, since it is the sentence a future reader needs before moving it
-back: Lax cookies are sent on a cross-site top-level **GET** by specification, in every browser.
-On a cross-site **POST** they are not — Chrome sends them anyway only under its two-minute
-"Lax-allowing-unsafe" intervention, which Safari and Firefox do not implement and which expires
-while a user is still choosing an account. Google Identity Services' redirect mode posts, which
-is why it was not used.
+**The callback is a GET.** The OAuth state cookie uses `SameSite=Lax` explicitly so it can
+accompany Google's top-level redirect back to `/api/v1/auth/google/callback`.
 
-The same cookie carries a **PKCE** verifier. The client is confidential, so `state` alone already
-defends against login CSRF; PKCE is there because the authorization code arrives in a query
-string and is proxied through Cloudflare to Render, two hops that log request URLs. A code
-recovered from a log is redeemable with the secret alone — with PKCE it is worthless.
+The same cookie carries a **PKCE** verifier. The server supplies it, together with the client
+secret, when exchanging the authorization code; the code alone is insufficient for that exchange.
 
 ---
 
 ## What Redis is and isn't used for
 
-Used for four things, each behind its own small store in `server/app/stores/`:
+Redis operations live behind adapters in `server/app/stores/`:
 
-1. **Refresh tokens** — rotation, theft detection, per-device session listing.
-2. **Rate limiting** — per-user fixed window on the AI endpoints, since vision calls cost money.
-3. **Barcode cache** — in front of `barcode_products` (interface only; barcode scanning not built).
-4. **AI detection cache** — keyed by image hash, so re-logging the same meal is free (interface
-   only).
+1. **Refresh tokens** — rotation, reuse detection, and per-device session revocation. Metadata
+   is stored per session, but there is no current session-list endpoint.
+2. **Rate limiting** — a per-user sliding window shared by photo, text, and barcode endpoints.
+3. **Optional access-token denylist** — disabled by default; enables revoking a token before expiry.
+
+`stores/health.py` provides the readiness ping. Completed detection responses and scanned products
+are cached in PostgreSQL's `detections` and `barcode_products` tables. The unused generic
+`stores/json_cache.py` helper remains from the earlier design and has no current callers.
 
 Deliberately **not** cached: user profiles, goals, and today's totals. They are cheap Postgres
 queries, and caching them would buy an invalidation problem in exchange for nothing measurable.
@@ -206,30 +208,47 @@ queries, and caching them would buy an invalidation problem in exchange for noth
 | `food_entries` | Nutrition stored **per 100 g** alongside the portion, so correcting grams recomputes exactly. Records `detection_method` (`photo`/`text`/`barcode`/`manual`) and source provenance. |
 | `foods` | Name-keyed reference (USDA FDC + dev seed). |
 | `barcode_products` | UPC-keyed reference (Open Food Facts). Separate from `foods` because the lookup key and upstream differ. |
+| `detections` | Completed photo/text response payloads, keyed by content and detection configuration. |
 
-Everything nutritional is per 100 g. That one decision means the photo path (grams) and the
-barcode path (servings) scale through identical code.
+Stored food nutrition uses a per-100 g basis plus a separate gram quantity. Responses can carry
+derived portion/day totals; personal goals store their computed daily targets as historical snapshots.
 
 ---
 
 ## Tests
 
 ```bash
-cd server && uv run pytest
+uv run --directory server ruff check .
+uv run --directory server pytest
 ```
 
-258 tests, no database or Redis required — Redis is `fakeredis` executing the **real Lua** via
-lupa, and the identity tables run on in-memory SQLite. The rotation, theft-detection, and
-concurrency behaviour is genuinely exercised, not mocked.
+No running PostgreSQL or Redis is required: the suite uses SQLite and `fakeredis`, which executes
+the real Lua scripts through lupa. `server/conftest.py` supplies the test signing key before
+application imports; `server/tests/conftest.py` supplies shared fixtures.
 
 ```bash
-cd client && npm run lint && npm run typecheck && npm run build
+npm --prefix client run lint
+npm --prefix client run typecheck
+npm --prefix client test
+npm --prefix client run build
 ```
 
-The client has no test suite yet; these three checks are what stands in for one. They are
-also exactly what `.github/workflows/client-ci.yml` runs on every PR, in this order — so a
-green run here means a green run there, and lint failing locally costs you a round trip
-rather than a red check.
+`client/test/api.test.mjs` uses Node's test runner to exercise the real transport and endpoint
+adapters with substituted network responses. It covers refresh coordination, expired sessions,
+multipart uploads, validation errors, and empty responses. The client workflow runs these four
+checks for matching pushes and pull requests; it does not provide full browser-journey coverage.
+
+## Developer scripts
+
+These commands also run from the repository root. They are separate from the HTTP server:
+
+| Command | Purpose and effects |
+| --- | --- |
+| `uv run --directory server python -m scripts.seed` | Insert/update development reference foods in the configured database. |
+| `uv run --directory server python -m scripts.probe_resolver` | Probe predefined foods against the configured database and live nutrition APIs; commit resolver write-backs, without calling the model. |
+| `uv run --directory server python -m scripts.probe_detection path/to/meal.jpg` | Run a fresh, paid model detection for a local photo; bypass auth/rate limits/detection cache and commit resolver write-backs. An optional second argument supplies a note. |
+| `uv run --directory server python -m scripts.eval_matching` | Score USDA ranking against the recorded fixture without network or database operations. |
+| `uv run --directory server python -m scripts.eval_matching --refresh` | Fetch USDA responses and update `server/tests/fixtures/usda_search.json`. |
 
 ---
 
@@ -245,18 +264,20 @@ loads `libzbar.so.0` at import, `app.main` reaches it through the router, and Re
 runtime has no `apt` step. Without that system package the app does not fail to scan a
 barcode — it fails to boot.
 
-**The Worker keeps the API awake.** A Cloudflare Cron Trigger in `client/wrangler.jsonc`
+**The Worker is configured to keep the API awake.** A Cloudflare Cron Trigger in `client/wrangler.jsonc`
 pings `/health` every ten minutes, inside the fifteen-minute idle window that would
 otherwise spin the free instance down. Without it the wake is not merely slow, it is
 *visible*: sign-in is a top-level navigation to `/api/v1/auth/google/start`, so a sleeping
 Render answers the browser with its own branded holding page instead of the redirect to
 Google. It pings liveness and not `/health/ready` — the job is to keep the container up,
-not to wake Neon and Upstash every ten minutes as well.
+not to query the database and Redis every ten minutes as well. The idle behavior is described
+in [Render's free-service documentation](https://render.com/docs/free); the schedule alone is
+not a guarantee of service availability.
 
 The cost is instance-hours. Always-warm spends close to the whole free monthly allowance,
-which works only while this is the only free service on the account; narrowing the cron to
+which must fit the workspace's shared allowance; narrowing the cron to
 `"*/10 6-23 * * *"` gives back roughly a quarter of it in exchange for a cold start on the
-first sign-in of the early morning. Cloudflare crons run in UTC.
+first sign-in of the early morning. [Cloudflare Cron Triggers use UTC](https://developers.cloudflare.com/workers/configuration/cron-triggers/).
 
 Production start command, for reference — no `--reload`, and `--host 0.0.0.0` because uvicorn
 otherwise binds `127.0.0.1` and nothing outside the container can reach it:
@@ -265,22 +286,20 @@ otherwise binds `127.0.0.1` and nothing outside the container can reach it:
 uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}
 ```
 
-**Migrations are run by hand**, not by the deploy. Render's free tier has no pre-deploy
-command, and putting `alembic upgrade head` in front of uvicorn would turn an unreachable
-database from a degraded service into a crash loop. Neon is reachable from anywhere, so run
-them from your machine — but **pass the production URL explicitly**. The bare command is the
-one in Quick start, and it migrates whatever your local environment points at, which is not
-Neon. `alembic/env.py` imports `app.config`, so it needs `JWT_SECRET_KEY` too — any value
-over 32 characters will do, since migrations never sign a token:
+**Migrations are run separately from deployment.** Neither the Docker start command nor
+`render.yaml` applies them automatically. Run them from a machine with database access and
+**pass the intended production URL explicitly**; the Quick start command otherwise targets
+whatever the process environment or `server/.env` specifies, including a managed database.
+`server/alembic/env.py` imports the settings, so it also requires `JWT_SECRET_KEY` with at least
+32 characters. The following Bash command uses a migration-only placeholder because it does not sign tokens:
 
 ```bash
-cd server && DATABASE_URL='postgresql+psycopg://…neon…?sslmode=require' JWT_SECRET_KEY='any-32-plus-character-string-here' uv run alembic upgrade head
+DATABASE_URL='postgresql+psycopg://USER:PASSWORD@HOST/DATABASE?sslmode=require' JWT_SECRET_KEY='migration-only-placeholder-at-least-32-characters' uv run --directory server alembic upgrade head
 ```
 
-> `DATABASE_URL` must use the `postgresql+psycopg://` scheme. Neon and Render both hand out
-> `postgresql://`, and pasting that unchanged raises nothing — SQLAlchemy quietly selects the
-> sync driver and every request blocks the event loop. `GET /health/ready` on the deployed
-> service is the check: it reports `database: "ok"` only when the async driver connected.
+> Use the `postgresql+psycopg://` scheme for this application's async SQLAlchemy engine.
+> `GET /health/ready` checks database and Redis connectivity; `GET /health` only checks that
+> the HTTP process is responding.
 
 ---
 
@@ -288,32 +307,59 @@ cd server && DATABASE_URL='postgresql+psycopg://…neon…?sslmode=require' JWT_
 
 ```
 server/app/
-├── api/routes/     health, auth, onboarding, logs, ai
-├── core/           nutrition (BMR/TDEE), security (JWT), limits, deps
-├── db/models/      SQLAlchemy models
-├── schemas/        Pydantic request/response models
-├── services/       Google verification, user upsert, target derivation
-└── stores/         Redis: refresh tokens, rate limit, barcode + AI caches
+├── api/            HTTP routes, cookies, dependencies, limits, error mapping
+│   └── routes/     health, auth, onboarding, profile, logs, ai
+├── core/           pure nutrition calculations, JWT security
+├── db/             sessions, transactions, health probe, reference-food seeding
+│   ├── models/     SQLAlchemy models
+│   └── repositories/  users, profiles, goals, logs, prompt usage, foods, caches
+├── models/         shared domain enums, independent of database models
+├── schemas/        shared Pydantic shapes and the strict model tool contract
+├── services/       shared logs, prompt allowance, readiness, application errors
+│   ├── auth/       identity, sessions, Google OAuth integration
+│   ├── detection/  detector, workflows, cache policy, barcodes, image preparation
+│   ├── profile/    onboarding/profile workflows and goal targets
+│   └── nutrition/  resolution policy, source clients, ranking and validation
+├── stores/         Redis adapters for sessions, limits, optional denylist, health
+└── utils/          general helpers such as readable device labels
 
 client/src/
-├── auth/           AuthProvider, GoogleSignInButton
-├── components/     DateStrip, MacroBars, MealGroup, ui primitives
-├── lib/            api client, formatting, nutrition mirror
-└── pages/          SignIn, Onboarding, TargetReveal, Today, AddFood, Confirm, Profile
+├── app/            router, route guards, auth provider wiring
+├── pages/          stable route entries exporting their feature screens
+├── features/       auth, onboarding, profile, food-logging, progress
+│   └── <feature>/  components, hooks, models, services, public index
+├── components/     one file per shared UI element, such as Logo and Avatar
+├── hooks/          shared auth hook
+├── models/         shared auth context, meal labels, profile choices, portion scaling
+├── services/       one HTTP transport and cross-feature auth/profile endpoints
+├── types/          API declarations grouped by auth, profile, onboarding, meals, nutrition, logs, detection
+└── utils/          date and number formatting
 ```
+
+Routes handle HTTP; services sequence application work; repositories execute SQL on the
+existing request session. Detection and barcode caches remain in Postgres. Client hooks own
+feature state and requests, while every service shares the same single-flight refresh transport.
+
+The [architecture research](docs/architecture-research.md) records the source guidance and
+[refactoring plan](docs/architecture-plan.md) records the decisions, boundaries, and verification.
 
 ---
 
-## Not built yet
+## Implemented behavior and remaining limits
 
-The Claude API call, USDA FoodData Central and Open Food Facts integration, barcode scanning, and
-meal-plan generation.
+Photo/text model detection, USDA and Open Food Facts resolution, barcode scanning, confirmation,
+food logging, onboarding, and profile/goal updates are implemented. Configure the required API
+credentials in `server/.env` before using live integrations; photo/text detection also checks
+the account allowance. `GET /api/v1/ai/tool-schema` exposes the model tool definition to an
+authenticated user and is intentionally hidden from OpenAPI.
 
-`POST /api/v1/ai/detect/photo` and `/detect/text` return **501** — but behind working
-authentication and rate limiting, and against the response contract the confirmation screen is
-already built against. The Pydantic schema the model will be held to lives in
-`server/app/schemas/detection.py`; `GET /api/v1/ai/tool-schema` returns the exact tool definition
-so you can see for yourself that no calorie field can reach it.
-
-`/log` and `/progress` are placeholder routes — neither has a design yet. The day view already
-serves as the food log.
+- `/log` remains a placeholder; `/today` provides date-by-date food history.
+- `/progress` displays real calorie history, but its weight chart still uses illustrative data.
+- Meal-plan generation is not implemented.
+- Account prompt usage is derived from saved food entries. Photo entries are grouped by image
+  hash; multiple entries from one text detection can overcount usage.
+- Photo cache keys include the image hash, model, effort, and prompt fingerprint, but currently
+  omit the optional note and meal type. Reusing an image can therefore return a previous response
+  despite changes to those inputs; the relocation preserved this existing behavior.
+- Progress currently imports food logging's API adapter directly. Feature folders improve
+  organization but do not yet provide complete isolation between those two features.

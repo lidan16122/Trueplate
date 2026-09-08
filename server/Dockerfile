@@ -17,10 +17,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libzbar0 \
  && rm -rf /var/lib/apt/lists/*
 
-# Nested one level deep so app/config.py's REPO_ROOT — Path(__file__).parents[2]
-# — lands on /app instead of /. Nothing reads a .env in the image (Render supplies
-# real environment variables, and pydantic-settings ignores a missing env_file),
-# but a coherent path costs one line.
+# Mirror the repository's server directory so imports and SERVER_ROOT agree.
+# Render supplies environment variables; the image excludes server/.env.
 WORKDIR /app/server
 
 # Dependencies before source, so editing a route does not re-resolve the tree.

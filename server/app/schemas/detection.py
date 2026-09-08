@@ -16,7 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.enums import DetectionMethod, MealType
+from app.models.enums import DetectionMethod, MealType
 
 Preparation = Literal["raw", "grilled", "fried", "baked", "boiled", "steamed", "roasted", "unknown"]
 

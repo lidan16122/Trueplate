@@ -14,7 +14,7 @@ import asyncio
 import pytest
 
 from app.config import settings
-from app.core.readiness import ProbeResult, check_readiness
+from app.services.readiness import ProbeResult, check_readiness
 
 
 class FakeSession:

@@ -1,11 +1,12 @@
 from fastapi import APIRouter
 
-from app.api.routes import ai, auth, logs, onboarding
+from app.api.routes import ai, auth, logs, onboarding, profile
 
 # Versioned application routes. Mounted under settings.api_v1_prefix.
 api_router = APIRouter()
 api_router.include_router(auth.router)
 api_router.include_router(onboarding.router)
+api_router.include_router(profile.router)
 api_router.include_router(logs.router)
 api_router.include_router(ai.router)
 

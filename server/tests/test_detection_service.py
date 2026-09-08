@@ -11,7 +11,7 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.services.detection import (
+from app.services.detection.detector import (
     TOOL_NAME,
     ZOOM_TOOL_NAME,
     DetectionRefused,

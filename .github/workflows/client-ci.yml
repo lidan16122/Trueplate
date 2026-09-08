@@ -28,9 +28,9 @@ permissions:
 
 jobs:
   checks:
-    name: Lint, typecheck, build
+    name: Lint, typecheck, test, build
     runs-on: ubuntu-latest
-    # These three gates finish in well under a minute. Without a ceiling a hung
+    # These checks finish in well under a minute. Without a ceiling a hung
     # npm ci — a registry that accepts the connection and then stops talking —
     # inherits GitHub's 360-minute default and presents as a stuck check rather
     # than a failed one, which is the harder thing to diagnose.
@@ -75,6 +75,8 @@ jobs:
       # buy a failure that reads as "types broke" rather than "build broke".
       - run: npm run typecheck
 
+      - run: npm test
+
       # VITE_API_BASE_URL is deliberately unset, which resolves to "" and leaves
       # the client calling /api/v1 on its own origin. That is the only value that
       # works once the Worker proxies /api — an absolute URL to another domain
@@ -86,7 +88,7 @@ jobs:
       - run: npm run build
 
       # Deploy ships these exact bytes rather than rebuilding, so what reaches
-      # Cloudflare is what the three gates above actually passed.
+      # Cloudflare is what the checks above actually passed.
       - uses: actions/upload-artifact@v7
         with:
           name: client-dist

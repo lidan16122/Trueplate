@@ -9,7 +9,7 @@ gamble.
 
 from datetime import UTC, datetime
 
-from app.services.google_oauth import GoogleIdentity
+from app.services.auth.google_oauth import GoogleIdentity
 from app.stores import keys
 from app.stores.refresh_tokens import hash_token
 

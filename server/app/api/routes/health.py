@@ -1,21 +1,15 @@
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
-from pydantic import BaseModel
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.readiness import check_readiness
 from app.db.session import get_db
+from app.schemas.health import ReadinessResponse
+from app.services.readiness import check_readiness
 from app.stores.client import get_redis
 
 router = APIRouter(tags=["health"])
-
-
-class ReadinessResponse(BaseModel):
-    status: Literal["ok", "degraded"]
-    database: str
-    redis: str
 
 
 @router.get("/health")

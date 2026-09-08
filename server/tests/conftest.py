@@ -22,7 +22,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.main import app as fastapi_app
-from app.services import google_oauth
+from app.services.auth import google_oauth
 from app.stores.client import get_redis
 from app.stores.refresh_tokens import RefreshTokenStore
 from tests import fakes

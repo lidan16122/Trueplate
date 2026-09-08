@@ -37,15 +37,13 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.base import as_utc
-from app.db.models.barcode import BarcodeProduct
 from app.db.models.food import Food
-from app.enums import NutritionSource
+from app.db.repositories import barcode_products, foods
+from app.models.enums import NutritionSource
 from app.schemas.detection import (
     DetectedFood,
     NutritionFacts,
@@ -269,11 +267,7 @@ class NutritionResolver:
 
     async def _lookup_cached(self, term: str) -> NutritionMatch | None:
         """Read ``foods`` case-insensitively, ignoring rows that have gone stale."""
-        rows = (
-            await self._db.scalars(
-                select(Food).where(func.lower(Food.name) == canonical_term(term))
-            )
-        ).all()
+        rows = await foods.by_name(self._db, canonical_term(term))
         if not rows:
             return None
 
@@ -300,9 +294,7 @@ class NutritionResolver:
         nutrition is already sitting in ``barcode_products``, and reaching a
         packaged product this way beats a free-text search for it every time.
         """
-        row = await self._db.scalar(
-            select(BarcodeProduct).where(func.lower(BarcodeProduct.name) == canonical_term(term))
-        )
+        row = await barcode_products.by_name(self._db, canonical_term(term))
         if row is None:
             return None
         return matches.from_barcode_product(row)
@@ -327,48 +319,5 @@ class NutritionResolver:
         name = canonical_term(term)
         now = datetime.now(UTC)
 
-        existing = await self._db.scalar(
-            select(Food).where(Food.name == name, Food.source == match.source)
-        )
-        if existing is not None:
-            existing.kcal_per_100g = match.kcal_per_100g
-            existing.protein_g_per_100g = match.protein_g_per_100g
-            existing.carbs_g_per_100g = match.carbs_g_per_100g
-            existing.fat_g_per_100g = match.fat_g_per_100g
-            existing.brand = match.brand
-            existing.source_ref = match.source_ref
-            existing.fetched_at = now
-            await self._db.flush()
-            return matches.from_food_row(existing)
-
-        row = Food(
-            name=name,
-            brand=match.brand,
-            source=match.source,
-            source_ref=match.source_ref,
-            kcal_per_100g=match.kcal_per_100g,
-            protein_g_per_100g=match.protein_g_per_100g,
-            carbs_g_per_100g=match.carbs_g_per_100g,
-            fat_g_per_100g=match.fat_g_per_100g,
-            fetched_at=now,
-        )
-        try:
-            # A SAVEPOINT, not the whole transaction. This session is shared by
-            # the entire request and committed once at the end, and a decomposed
-            # dish resolves several foods through here in a loop — so a bare
-            # rollback on the fourth would silently discard the write-backs for
-            # the first three, and leave the route committing a dead session.
-            async with self._db.begin_nested():
-                self._db.add(row)
-        except IntegrityError:
-            # Another request resolved the same term first. The unique index is
-            # the backstop that makes this a lost race rather than a duplicate
-            # row; re-read and use the winner.
-            winner = await self._db.scalar(
-                select(Food).where(Food.name == name, Food.source == match.source)
-            )
-            if winner is not None:
-                return matches.from_food_row(winner)
-            return match
-
-        return matches.from_food_row(row)
+        row = await foods.upsert(self._db, name, match, now)
+        return matches.from_food_row(row) if row is not None else match
