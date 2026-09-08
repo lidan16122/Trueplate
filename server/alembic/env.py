@@ -15,8 +15,8 @@ from app.db.models import Base
 
 config = context.config
 
-# The URL lives in the repo-root .env, not alembic.ini, so migrations and the
-# app can never disagree about which database they are pointed at.
+# Share the app's settings so migrations use the same database configuration.
+# Process environment variables override server/.env for explicit deployment targets.
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:

@@ -8,8 +8,8 @@ __pycache__/
 .ruff_cache/
 .mypy_cache/
 
-# Never bake secrets into an image. Render supplies real environment variables,
-# and app/config.py would not look here for a .env anyway.
+# Never bake secrets into an image. Render supplies environment variables instead
+# of the server/.env file that app/config.py reads during local development.
 .env
 .env.*
 

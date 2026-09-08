@@ -18,8 +18,9 @@ source row.
 
 ## Nutrition data is per 100 g
 
-Every table, schema, and component that carries nutrition stores it **per 100 g**
-alongside a separate quantity in grams. Never a pre-multiplied total.
+Persisted food nutrition uses **per 100 g** values alongside a separate quantity in grams.
+API responses and components may expose derived portion/day totals; those totals do not replace
+the stored basis. Personal calorie and macro targets are separate daily-goal snapshots.
 
 This is what lets a corrected portion recompute with a single-field edit, and it means
 the photo path (grams) and the barcode path (servings) scale through identical code.
@@ -53,21 +54,26 @@ services talk to a store, never to a Redis client. Deliberately *not* cached: us
 profiles, goals, and day totals — cheap Postgres queries whose caching would buy an
 invalidation problem for nothing.
 
-**Redis is for refresh-token families and rate-limit counters. Nothing else.** The two
-caches that pay for themselves — completed detections and scanned products — live in
-Postgres (`services/detection_cache.py`, `barcode_products`), because both payloads are
-large and long-lived and the Redis instance here is neither. `stores/keys.py` records the
-decision; the Redis cache shells that used to sit beside it were deleted rather than left
-as an invitation.
+**Redis stores refresh-token families, rate-limit counters, and an optional access-token
+denylist.** Completed detections and scanned products live in Postgres
+(`app/services/detection/cache.py`, `barcode_products`) because their payloads are large and
+long-lived. `app/stores/keys.py` records the key namespace; the unused `app/stores/json_cache.py`
+helper is a legacy remainder, not the active detection or product cache.
 
-A cache key folds in **everything that changes the answer** — model, effort, and
-`PROMPT_FINGERPRINT`, a digest over the system prompt and the tool schema. Without the
-last one, tuning a prompt is invisible on every photo already submitted, which is every
-photo anyone has complained about.
+Detection keys include the model, effort, and `PROMPT_FINGERPRINT`, a digest over the system
+prompt and tool schema. Preserve these inputs when relocating code so cached results do not
+silently outlive changes to the detector.
 
-**A multi-step Redis mutation that must not interleave goes in Lua.** A pipeline is not
-atomic. `stores/refresh_tokens.py` rotates tokens this way because two concurrent
-refreshes otherwise both observe the same token as live.
+Photo keys currently omit the optional note and meal type; text keys include normalized text
+and meal type. This is an existing cache limitation, not a complete key policy to copy into new work.
+
+**Redis checks and their dependent mutations run together in Lua.**
+`app/stores/refresh_tokens.py` uses this for rotation and owner-scoped revocation so another
+request cannot interleave between checking a record and changing it.
+
+A redis-py pipeline with `transaction=True` runs its queued commands without interleaving;
+session creation uses that form. It does not protect reads performed beforehand in Python.
+See [Redis pipelines and transactions](https://redis.io/docs/latest/develop/clients/redis-py/transpipe/).
 
 **Return an explicit `JSONResponse` when a failure path sets or clears cookies.** FastAPI
 discards the injected `Response` when an exception propagates, so cookies mutated on it
@@ -79,7 +85,7 @@ over a synchronous transport; calling it directly stalls the event loop for ever
 in-flight request on the worker.
 
 **Authorization is the query.** Fetch a resource through a join to its owner
-(`_owned_entry` in `api/routes/logs.py`) so an unauthorised id returns 404 by
+(`owned_entry` in `app/db/repositories/logs.py`) so an unauthorised id returns 404 by
 construction. A separate ownership check after an unscoped fetch is a check someone can
 forget.
 
@@ -95,9 +101,9 @@ Alembic emits unnamed constraints that no later migration can drop.
 
 ## Resolving a food to a number
 
-`services/nutrition/` is the only place a calorie enters the app. One module per upstream,
-plus `resolver.py` walking them; routes and services talk to `NutritionResolver` and never
-to a source client.
+`app/services/nutrition/` owns food-nutrition source integration. Photo/text detection uses
+`NutritionResolver`; the barcode service uses the package's `OpenFoodFactsClient` for exact
+product lookup. Source clients normalize upstream payloads into the shared nutrition shapes.
 
 **Every upstream here answers confidently and none of them validate.** Two guards exist
 because of it, and they are siblings — `relevance.py` asks whether a row is about the right
@@ -165,14 +171,14 @@ it once per clone:
     git config core.hooksPath .githooks
 
 It matches the tool trailers by address, so a genuine human co-author on a pairing session
-still survives. This is about credit, not about the product — Trueplate calls the Codex API,
+still survives. This is about credit, not about the product — Trueplate calls the Claude API,
 so references to it in code and docs are correct and stay.
 
 ## Environment gotchas
 
 `fastapi dev` crashes on Windows — its banner cannot encode to the console codepage. Run:
 
-    uv run uvicorn app.main:app --reload --port 8000
+    uv run --directory server uvicorn app.main:app --reload --port 8000
 
 Open the app on **:5173**, not :8000. The Vite proxy makes `/api` same-origin, which is
 what lets the httpOnly cookies work with no CORS configuration at all.
@@ -180,5 +186,5 @@ what lets the httpOnly cookies work with no CORS configuration at all.
 Postgres and Redis are expected to come from `docker-compose.yml`. This machine runs
 managed instances instead (Neon, Upstash); connection URLs live in the gitignored
 `server/.env` — the app reads that one, the repo-root `.env` is Compose's — and
-`DATABASE_URL` needs the `postgresql+psycopg://` prefix or SQLAlchemy selects the sync
-driver.
+`DATABASE_URL` needs the `postgresql+psycopg://` prefix for the configured async SQLAlchemy
+engine. Process environment variables override values loaded from `server/.env`.

@@ -10,8 +10,8 @@ nutrition calculations, model prompts, cache keys, UI markup, styling, and lazy 
 Keep existing synchronous pure functions and React callbacks synchronous; this is not an async
 conversion, domain-model rewrite, dependency upgrade, or schema migration.
 
-Preserve the existing user edits in `AGENTS.md` and `CLAUDE.md`; the enum relocation only
-updates their enum-module reference to `app/models/enums.py`.
+Preserve the project rules in `AGENTS.md` and `CLAUDE.md`, keeping their paths and descriptions
+in sync with the implementation. Both files now contain the same working agreements.
 The [research findings](architecture-research.md) explain the primary-source guidance and the
 repository-specific decisions below.
 
@@ -73,7 +73,7 @@ the managed database to validate a relocation.
 
 Baseline: 268 server tests passed, one skipped; server lint and client lint/build passed.
 
-Final verification on 2026-09-07:
+Initial refactor verification on 2026-09-07 (before the later service, enum, component, and type splits):
 
 - Server: 273 maintained behavior tests passed, one existing test skipped. Two temporary
   baseline comparisons also passed (275 passed in the combined run); the same two existing
@@ -96,10 +96,11 @@ Final verification on 2026-09-07:
   from `/today` to `/signin`. Authenticated browser workflows and live external integrations
   were not exercised; their server behavior is covered using SQLite, fakeredis, and mocked
   upstream transports. No paid model calls or managed-database writes were used for testing.
-- A source audit found no direct SQL/session operations remaining in API routes, services,
-  core, or operational scripts. SQL lives in database adapters, with intentional exceptions
-  for migration definitions and test fixtures. Database models, migrations, formulas, model
-  prompts, nutrition ranking, theme tokens, and dependency lockfiles are unchanged.
+- A source audit found no direct SQL statements or driver-level session mutations remaining
+  in API routes, services, core, or operational scripts. Those layers still pass sessions and
+  call transaction adapters; SQL lives in database adapters, migrations, and test fixtures.
+  Database table definitions, migrations, formulas, model prompts, nutrition ranking, theme
+  tokens, and dependency lockfiles were preserved.
 
 Run the maintained checks with `uv run pytest` and `uv run ruff check .` from `server/`,
 and `npm run lint`, `npm test`, `npm run typecheck`, and `npm run build` from `client/`.
@@ -122,11 +123,9 @@ logging workflow. This avoids cross-feature imports between confirmation and its
 The auth provider is app wiring, its context/hook are shared, and sign-in UI belongs to
 `features/auth`. Auth and profile endpoint adapters are shared because several features use them.
 
-Some existing instruction references retain their original paths because those files were user edits. Their
-`core/deps.py`, `core/limits.py`, and `core/readiness.py` references now correspond to `api/deps.py`,
-`api/limits.py`, and `services/readiness.py`; the owner-scoped entry query lives in
-`db/repositories/logs.py`. Their `services/detection_cache.py` reference now points to
-`services/detection/cache.py`. Model schemas and pure nutrition calculations retain their original paths.
+The instruction files now name the current detection cache, owner-scoped repository query,
+and shared enum module. The research document retains its original inventory as historical
+evidence; the ownership and module maps here describe the current layout.
 
 ## Service package grouping
 
@@ -141,3 +140,36 @@ code outside import declarations and documentation-path corrections.
 
 Validation after grouping: Ruff passed; the complete backend suite passed with 273 tests,
 one existing skip, and two existing Starlette deprecation warnings.
+
+## Current layout and documentation audit — 2026-09-08
+
+Reviewed commit `d0ea907` on `architecture-reorganization`. The subsequent documentation
+corrections update all five Markdown files against the implementation without changing runtime
+behavior, schemas, migrations, prompts, or dependency versions.
+Stale comments in the Docker files, migration setup, server CI, and client Worker also now
+name the current configuration and module paths; their executable content is unchanged.
+
+The README now covers implemented detection/barcode behavior, PostgreSQL cache ownership,
+Redis's sliding-window limiter and optional denylist, current test commands, script side effects,
+and `server/.env` configuration. Both instruction files use the same rules and current paths.
+
+Verification on the current layout:
+
+- Backend: 273 tests passed, one existing skip, and two Starlette status-name deprecation
+  warnings; Ruff passed.
+- Client: all six tests, ESLint, TypeScript, and the production build passed. Progress remains
+  a separate 389.86 kB chunk; the main JavaScript bundle is 355.33 kB.
+- All local import targets resolve across 73 client TypeScript modules, with no import cycles.
+  All 286 checked `app` module references across 112 application, script, and test Python files resolve.
+- All five local Markdown links resolve. `AGENTS.md` and `CLAUDE.md` are identical.
+
+Existing limits are explicit rather than implied to be fixed by the folder moves:
+
+- Progress imports the food-logging API adapter directly; those features are not fully isolated.
+- `server/app/stores/json_cache.py` has no callers and remains a legacy helper.
+- Photo cache keys omit the optional note and meal type; changing either can reuse an earlier response.
+- The prompt counter is based on saved entries and can overcount a multi-food text detection.
+- `/log` is a placeholder and the Progress weight chart is illustrative.
+
+Docker is unavailable on this machine. Container builds, live OAuth/model calls, and managed
+database or Redis operations are not part of this audit.

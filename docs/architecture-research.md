@@ -1,6 +1,10 @@
 # Server and client structure research
 
-Research date: 2026-09-07. Scope: move existing responsibilities into clear owners while preserving behavior, contracts, schema, styling, and dependencies. The inventory below records the starting checkout; it is not a claim that every proposed path already exists.
+Research date: 2026-09-07. Scope: move existing responsibilities into clear owners while preserving behavior, contracts, schema, styling, and dependencies.
+
+This is a historical research record: paths in the starting inventory and initial proposals
+deliberately describe the pre-refactor checkout. For current locations and verification, use
+the [architecture plan](architecture-plan.md) and [README layout](../README.md#project-layout).
 
 ## What the primary sources establish
 
@@ -17,7 +21,7 @@ The feature names, repository modules, and ownership decisions below are **Truep
 
 The server uses FastAPI, Pydantic 2, SQLAlchemy 2 async sessions, Redis stores, and Alembic. Existing names already express useful boundaries: `app/services` is business/application logic, `app/db` is persistence, `app/stores` is Redis access, and `app/schemas` contains shared application and transport shapes. Retain these names rather than add parallel `bll`/`dal` trees.
 
-| Existing owner | Finding | Proposed owner and boundary |
+| Starting owner | Finding | Initial proposed owner and boundary |
 | --- | --- | --- |
 | `app/api/routes/logs.py` | HTTP handlers also query/create logs, mutate entries, calculate totals, and assemble days. | Keep endpoint declarations and response mapping in API; move day and entry workflows into `services/logs.py`, scoped queries and storage mutations into `db/repositories/logs.py`. |
 | `app/api/routes/onboarding.py` | Six endpoints mix profile/onboarding transport, name rules, profile/weight persistence, and goal sequencing. | Keep onboarding HTTP handlers together; group profile HTTP handlers separately where useful. Put workflows in profile/onboarding services and profile/weight queries in cohesive repositories. |
@@ -31,9 +35,12 @@ The server uses FastAPI, Pydantic 2, SQLAlchemy 2 async sessions, Redis stores, 
 
 Repositories should expose cohesive operations rather than a generic CRUD framework. Keep the current shared unit of work: extracting several repository calls must not make each call commit independently. Existing services may retain their present session/ORM interfaces during this mechanical extraction; replacing all entities with domain DTOs and introducing protocols everywhere would be a separate architecture migration.
 
-The client uses React 19.2, React Router 7, TypeScript, Vite, Tailwind theme tokens, and a hand-written HTTP client. It has no existing client test runner. Routes are explicitly configured; no filesystem routing convention forces a particular location.
+At the start of the refactor, the client used React 19.2, React Router 7, TypeScript, Vite,
+Tailwind theme tokens, and a hand-written HTTP client, with no client test runner. Node's test
+runner was added during the refactor. Routes are explicitly configured rather than inferred
+from the filesystem.
 
-| Existing owner | Finding | Proposed owner and boundary |
+| Starting owner | Finding | Initial proposed owner and boundary |
 | --- | --- | --- |
 | `src/router.tsx`, `src/main.tsx`, `components/ProtectedRoute.tsx` | Routing, bootstrap, guards, and lazy fallback form the application shell. | `app/router.tsx` and application routing components; keep the Vite entry stable and preserve provider order. |
 | `src/auth/*`, `pages/SignIn.tsx` | One coherent authentication feature. | `features/auth` for state, sign-in UI, and hooks; application-level guards consume its public API. |
@@ -53,3 +60,16 @@ The client uses React 19.2, React Router 7, TypeScript, Vite, Tailwind theme tok
 6. Re-run server Ruff and pytest, client typecheck/lint/build, and compare captured API/schema artifacts. Inspect all remaining SQL and network call sites for ownership; SQL in migrations, tests, session setup, and dedicated database adapters is intentional. Review import cycles and the built progress chunk, then smoke-check relocated screens when a runnable browser session is available.
 
 Completion evidence belongs in the implementation plan/report: this research document recommends the checks and does not claim they have run.
+
+## Decisions adopted after the initial proposal
+
+- Food input, confirmation, and diary screens share `client/src/features/food-logging/`.
+- Auth provider/guard wiring lives in `client/src/app/`; the shared auth hook/context live in
+  `hooks/` and `models/`, with sign-in UI in `features/auth/`.
+- Backend services are grouped into `auth/`, `detection/`, and `profile/`, alongside nutrition
+  resolution. Shared enums live in `server/app/models/enums.py`.
+- Shared client components and API types use individual component files and context-specific
+  type modules. The old aggregate modules are no longer current import locations.
+- The 2026-09-08 documentation audit checked Redis transaction semantics against the
+  [redis-py pipeline documentation](https://redis.io/docs/latest/develop/clients/redis-py/transpipe/).
+  A transactional pipeline protects its queued commands; read-dependent mutations here use Lua.
