@@ -6,7 +6,7 @@ from sqlalchemy import Date, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.enums import ActivityLevel, UnitPreference, WeightSource
+from app.models.enums import ActivityLevel, UnitPreference, WeightSource
 
 if TYPE_CHECKING:
     from app.db.models.user import User

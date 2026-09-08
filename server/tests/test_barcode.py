@@ -17,7 +17,7 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.barcode import BarcodeProduct
-from app.services import barcode as barcode_service
+from app.services.detection import barcode as barcode_service
 from app.services.nutrition import OpenFoodFactsClient
 from tests.fakes import nutrition_transport, off_product_payload
 

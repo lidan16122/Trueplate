@@ -2,7 +2,7 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.enums import ActivityLevel, GoalType, Sex, UnitPreference
+from app.models.enums import ActivityLevel, GoalType, Sex, UnitPreference
 
 
 class OnboardingRequest(BaseModel):

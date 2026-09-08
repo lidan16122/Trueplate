@@ -9,7 +9,7 @@ from app.api.router import api_router
 from app.api.routes import health
 from app.config import settings
 from app.db.session import engine
-from app.services.google_oauth import close_google_http_client
+from app.services.auth.google_oauth import close_google_http_client
 from app.services.nutrition import close_http_client
 from app.stores.client import close_redis_pool
 
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     await engine.dispose()
     await close_redis_pool()
     await close_http_client()
-    # Its own client, separate from the nutrition one (see services/google_oauth.py
+    # Its own client, separate from the nutrition one (see services/auth/google_oauth.py
     # for why), so it needs its own teardown.
     await close_google_http_client()
     logger.info("%s API stopped", settings.app_name)

@@ -18,6 +18,7 @@ import sys
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.config import settings
+from app.db import transaction
 from app.db.loop import psycopg_loop_factory
 from app.db.session import engine
 from app.schemas.detection import DetectedFood
@@ -92,7 +93,7 @@ async def main() -> int:
                 f"{label:<24} {item.matched.source:<18} "
                 f"{item.matched.kcal_per_100g:>9.1f}  {item.matched.name[:44]}{flag}"
             )
-        await db.commit()
+        await transaction.commit(db)
 
     await close_http_client()
     await engine.dispose()

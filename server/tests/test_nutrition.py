@@ -19,7 +19,7 @@ from app.core.nutrition import (
     birth_date_from_age,
     calculate_targets,
 )
-from app.enums import ActivityLevel, GoalType, Sex
+from app.models.enums import ActivityLevel, GoalType, Sex
 
 # The prototype's default state, reused wherever a concrete body is needed.
 DESIGN_DEFAULT = BodyMetrics(weight_kg=74, height_cm=172, age=32, sex=Sex.FEMALE)

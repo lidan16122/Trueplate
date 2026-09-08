@@ -288,19 +288,41 @@ cd server && DATABASE_URL='postgresql+psycopg://…neon…?sslmode=require' JWT_
 
 ```
 server/app/
-├── api/routes/     health, auth, onboarding, logs, ai
-├── core/           nutrition (BMR/TDEE), security (JWT), limits, deps
-├── db/models/      SQLAlchemy models
-├── schemas/        Pydantic request/response models
-├── services/       Google verification, user upsert, target derivation
-└── stores/         Redis: refresh tokens, rate limit, barcode + AI caches
+├── api/            HTTP routes, cookies, dependencies, limits, error mapping
+│   └── routes/     health, auth, onboarding, profile, logs, ai
+├── core/           pure nutrition calculations, JWT security
+├── db/             sessions, transactions, health probe, reference-food seeding
+│   ├── models/     SQLAlchemy models
+│   └── repositories/  users, profiles, goals, logs, prompt usage, foods, caches
+├── models/         shared domain enums, independent of database models
+├── schemas/        shared Pydantic shapes and the strict model tool contract
+├── services/       shared logs, prompt allowance, readiness, application errors
+│   ├── auth/       identity, sessions, Google OAuth integration
+│   ├── detection/  detector, workflows, cache policy, barcodes, image preparation
+│   ├── profile/    onboarding/profile workflows and goal targets
+│   └── nutrition/  resolution policy, source clients, ranking and validation
+├── stores/         Redis adapters for sessions, limits, optional denylist, health
+└── utils/          general helpers such as readable device labels
 
 client/src/
-├── auth/           AuthProvider, GoogleSignInButton
-├── components/     DateStrip, MacroBars, MealGroup, ui primitives
-├── lib/            api client, formatting, nutrition mirror
-└── pages/          SignIn, Onboarding, TargetReveal, Today, AddFood, Confirm, Profile
+├── app/            router, route guards, auth provider wiring
+├── pages/          stable route entries exporting their feature screens
+├── features/       auth, onboarding, profile, food-logging, progress
+│   └── <feature>/  components, hooks, models, services, public index
+├── components/     one file per shared UI element, such as Logo and Avatar
+├── hooks/          shared auth hook
+├── models/         shared auth context, meal labels, profile choices, portion scaling
+├── services/       one HTTP transport and cross-feature auth/profile endpoints
+├── types/          API declarations grouped by auth, profile, onboarding, meals, nutrition, logs, detection
+└── utils/          date and number formatting
 ```
+
+Routes handle HTTP; services sequence application work; repositories execute SQL on the
+existing request session. Detection and barcode caches remain in Postgres. Client hooks own
+feature state and requests, while every service shares the same single-flight refresh transport.
+
+The [architecture research](docs/architecture-research.md) records the source guidance and
+[refactoring plan](docs/architecture-plan.md) records the decisions, boundaries, and verification.
 
 ---
 

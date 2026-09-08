@@ -12,20 +12,19 @@ handler, so a rejected request never reaches a paid model call.
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from fastapi.concurrency import run_in_threadpool
 
+from app.api.deps import CurrentUser, DbSession, Detector, FoodFacts
+from app.api.limits import AI_DETECT_SCOPE, RateLimit, require_prompt_allowance
 from app.config import settings
-from app.core.deps import CurrentUser, DbSession, Detector, FoodFacts
-from app.core.limits import AI_DETECT_SCOPE, RateLimit, require_prompt_allowance
-from app.enums import DetectionMethod, MealType
+from app.models.enums import MealType
 from app.schemas.detection import (
     FoodDetectionResponse,
     TextDetectionRequest,
     anthropic_tool_schema,
 )
-from app.services import barcode as barcode_service
-from app.services import detection_cache, imaging
-from app.services.detection import (
+from app.services.detection import barcode as barcode_service
+from app.services.detection import imaging, workflow
+from app.services.detection.detector import (
     DetectionError,
     DetectionRefused,
     NotFoodError,
@@ -96,46 +95,10 @@ async def detect_from_photo(
 ) -> FoodDetectionResponse:
     """Identify foods and estimate portions from a meal photo."""
     raw = await _read_upload(image)
-
-    # Hashed before downscaling, so the content address is the bytes the user
-    # actually sent. Hashing the processed copy would make it depend on our own
-    # resize settings, and every tweak to those would silently empty the cache.
-    #
-    # Two derived values, deliberately: `image_hash` travels to the client and
-    # into `food_entries` as the grouping key for one photo's entries, while the
-    # cache key additionally folds in the model and effort so a config change
-    # cannot keep serving a stale reading.
-    image_hash = detection_cache.hash_image(raw)
-    cache_key = detection_cache.photo_cache_key(image_hash)
-    cached = await detection_cache.read(db, cache_key)
-    if cached is not None:
-        await db.commit()
-        return cached
-
-    # Pillow is CPU-bound and blocking; on a single worker it would otherwise
-    # stall every other in-flight request while a phone photo is resized.
-    prepared = await run_in_threadpool(imaging.prepare_image, raw)
-
     try:
-        response = await detector.detect_photo(
-            prepared, note=note, meal_type=meal_type, image_hash=image_hash
-        )
+        return await workflow.detect_photo(db, detector, raw, note, meal_type)
     except DetectionError as exc:
         raise _translate(exc) from exc
-
-    if not response.is_provisional:
-        # A reading we already doubt is not worth keeping for
-        # `detections_ttl_days`. Cached, it would answer this photo the same way
-        # every time — so a user who can see the meal was under-read has no way
-        # to ask again, and "try again" replays the failure. Paying for a second
-        # detection is the cheaper mistake.
-        await detection_cache.write(db, cache_key, DetectionMethod.PHOTO, response)
-    else:
-        logger.info("Not caching a provisional reading of %s", image_hash[:12])
-    # One commit covers both the cache row and anything the resolver wrote back
-    # to `foods` during this request.
-    await db.commit()
-    return response
 
 
 @router.post(
@@ -154,23 +117,10 @@ async def detect_from_text(
     Cheaper and more accurate than the camera whenever the user actually knows
     what they ate: "100 g of rice" is a fact, where any photo estimate is not.
     """
-    cache_key = detection_cache.hash_text(payload.description, payload.meal_type)
-    cached = await detection_cache.read(db, cache_key)
-    if cached is not None:
-        await db.commit()
-        return cached
-
     try:
-        response = await detector.detect_text(payload.description, payload.meal_type)
+        return await workflow.detect_text(db, detector, payload)
     except DetectionError as exc:
         raise _translate(exc) from exc
-
-    # Same rule as the photo path: a reading that disagreed with its own
-    # component count is not one to answer with for the next thirty days.
-    if not response.is_provisional:
-        await detection_cache.write(db, cache_key, DetectionMethod.TEXT, response)
-    await db.commit()
-    return response
 
 
 @router.post(
@@ -197,26 +147,11 @@ async def detect_from_barcode(
     is nothing to identify and nothing to estimate.
     """
     code = (upc or "").strip()
+    raw = await _read_upload(image) if not code and image is not None else None
     try:
-        if not code and image is not None:
-            raw = await _read_upload(image)
-            # Decoded from the original bytes: a barcode is fine detail, and the
-            # downscale the vision path applies routinely destroys it.
-            code = await run_in_threadpool(barcode_service.decode, raw) or ""
-
-        if not code:
-            # The service's own error type rather than a bare HTTPException, so
-            # every barcode failure reaches the client through one mapping.
-            raise barcode_service.BarcodeUnreadable(
-                "No barcode found. Try again with the barcode filling more of the frame."
-            )
-
-        match, grams, serving = await barcode_service.lookup(db, off, code)
+        return await workflow.detect_barcode(db, off, code, raw, meal_type)
     except (DetectionError, barcode_service.BarcodeError) as exc:
         raise _translate(exc) from exc
-
-    await db.commit()
-    return barcode_service.to_response(match, grams, serving, meal_type)
 
 
 @router.get("/tool-schema", include_in_schema=False)

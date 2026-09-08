@@ -42,9 +42,10 @@ Two consequences worth knowing:
 
 ## Backend
 
-**Comments carry the reason, not the mechanics.** The density here is deliberate and high
-— match it. State why a choice was made, what breaks without it, or what a reader would
-otherwise assume wrongly. The code already shows what it does.
+**Comments carry the reason, not the mechanics.** They are deliberately frequent and
+deliberately short — one or two sentences each. State why a choice was made, what breaks
+without it, or what a reader would otherwise assume wrongly. The code already shows what it
+does.
 
 **Redis access lives behind a store** in `app/stores/`, one file per use case. Routes and
 services talk to a store, never to a Redis client. Deliberately *not* cached: user
@@ -86,7 +87,7 @@ library defaults are long enough that a dead dependency presents as a hang, whic
 harder to diagnose than an outage.
 
 **Enums are `StrEnum` stored in `String` columns.** A PostgreSQL `ENUM` turns "add a login
-provider" into a migration. `app/enums.py` is the single source.
+provider" into a migration. `app/models/enums.py` is the single source.
 
 Persisted models inherit the `MetaData` naming convention in `db/base.py` — without it
 Alembic emits unnamed constraints that no later migration can drop.

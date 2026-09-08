@@ -8,9 +8,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.detection import Detection
-from app.enums import DetectionMethod
-from app.services import detection_cache
-from app.services.detection import PROMPT_FINGERPRINT
+from app.models.enums import DetectionMethod
+from app.services.detection import cache as detection_cache
+from app.services.detection.detector import PROMPT_FINGERPRINT
 
 
 def _response(**overrides) -> dict:

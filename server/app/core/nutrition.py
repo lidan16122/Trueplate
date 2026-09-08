@@ -15,7 +15,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 
-from app.enums import ActivityLevel, GoalType, Sex
+from app.models.enums import ActivityLevel, GoalType, Sex
 
 # kcal per kg of body mass. The conventional figure behind "500 kcal/day ≈
 # 0.45 kg/week"; kept as a named constant because it is an estimate, not a law.

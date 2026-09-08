@@ -7,10 +7,9 @@ from urllib.parse import unquote_plus
 import httpx
 import pytest
 
-from app.api.routes import auth as auth_routes
 from app.config import settings
-from app.services import google_oauth
-from app.services.google_oauth import GoogleAuthError
+from app.services.auth import google_oauth
+from app.services.auth.google_oauth import GoogleAuthError
 from tests import fakes
 from tests.helpers import (
     ALICE,
@@ -617,7 +616,7 @@ class TestGoogleOAuthCallback:
         assert unquote_plus(sent["redirect_uri"]) == settings.google_redirect_uri
 
     async def test_an_unexpected_failure_still_redirects_rather_than_500ing(
-        self, client, google_token, monkeypatch
+        self, client, google_token, db_session, monkeypatch
     ):
         # The route's whole promise is that nothing it does renders JSON in the
         # user's own window. Postgres and the token store are both reachable from
@@ -626,7 +625,7 @@ class TestGoogleOAuthCallback:
         async def boom(*args, **kwargs):
             raise RuntimeError("the database went away")
 
-        monkeypatch.setattr(auth_routes, "_establish_session", boom)
+        monkeypatch.setattr(db_session, "scalar", boom)
         state = await self._start(client)
 
         response = await self._callback(client, code="abc", state=state)

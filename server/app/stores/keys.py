@@ -21,7 +21,7 @@ RATE_LIMIT = "rl:{scope}:{subject}"
 
 # Nothing from the Add Food pipeline is keyed here, deliberately. Detection
 # results and barcode products live in Postgres (`detections`,
-# `barcode_products`) — see app/services/detection_cache.py. Redis on this
+# `barcode_products`) — see app/services/detection/cache.py. Redis on this
 # deployment is a small shared instance reserved for refresh-token families and
 # the rate-limit counters above, and a detection payload is large, long-lived,
 # and perfectly served by a single-key Postgres read.

@@ -12,10 +12,10 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_detection_service
+from app.api.deps import get_detection_service
 from app.db.models import User
 from app.main import app as fastapi_app
-from app.services.detection import NotFoodError
+from app.services.detection.detector import NotFoodError
 from tests.helpers import sign_in
 
 API = "/api/v1"
