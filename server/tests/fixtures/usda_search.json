@@ -18508,5 +18508,2890 @@
     }
    ]
   }
+ ],
+ "pizza": [
+  {
+   "fdcId": 2036440,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 6.8
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.84
+    },
+    {
+     "nutrientId": 1005,
+     "value": 32.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 238
+    }
+   ]
+  },
+  {
+   "fdcId": 2629362,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.6
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.22
+    },
+    {
+     "nutrientId": 1005,
+     "value": 19.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 199
+    }
+   ]
+  },
+  {
+   "fdcId": 1925054,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 21.4
+    },
+    {
+     "nutrientId": 1004,
+     "value": 28.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 0.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 357
+    }
+   ]
+  },
+  {
+   "fdcId": 1923243,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 8.87
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.87
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 226
+    }
+   ]
+  },
+  {
+   "fdcId": 482194,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.7
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.0
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.9
+    },
+    {
+     "nutrientId": 1008,
+     "value": 250
+    }
+   ]
+  },
+  {
+   "fdcId": 1514883,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.2
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.5
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.5
+    },
+    {
+     "nutrientId": 1008,
+     "value": 265
+    }
+   ]
+  },
+  {
+   "fdcId": 1854756,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 6.38
+    },
+    {
+     "nutrientId": 1004,
+     "value": 1.06
+    },
+    {
+     "nutrientId": 1005,
+     "value": 63.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 298
+    }
+   ]
+  },
+  {
+   "fdcId": 475629,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.85
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.85
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 250
+    }
+   ]
+  },
+  {
+   "fdcId": 2288601,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.21
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.89
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.3
+    },
+    {
+     "nutrientId": 1008,
+     "value": 237
+    }
+   ]
+  },
+  {
+   "fdcId": 2125966,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.75
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.75
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.3
+    },
+    {
+     "nutrientId": 1008,
+     "value": 218
+    }
+   ]
+  },
+  {
+   "fdcId": 1791719,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.0
+    },
+    {
+     "nutrientId": 1005,
+     "value": 24.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 216
+    }
+   ]
+  },
+  {
+   "fdcId": 2385814,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.0
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.9
+    },
+    {
+     "nutrientId": 1005,
+     "value": 20.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 243
+    }
+   ]
+  },
+  {
+   "fdcId": 2098613,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.1
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 18.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 225
+    }
+   ]
+  },
+  {
+   "fdcId": 2036730,
+   "description": "PIZZA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 6.82
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.09
+    },
+    {
+     "nutrientId": 1005,
+     "value": 23.5
+    },
+    {
+     "nutrientId": 1008,
+     "value": 220
+    }
+   ]
+  },
+  {
+   "fdcId": 2708008,
+   "description": "Dessert pizza",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 1.84
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.53
+    },
+    {
+     "nutrientId": 1005,
+     "value": 32.38
+    },
+    {
+     "nutrientId": 1008,
+     "value": 204
+    }
+   ]
+  },
+  {
+   "fdcId": 2708507,
+   "description": "Mexican pizza",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 15.47
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.94
+    },
+    {
+     "nutrientId": 1005,
+     "value": 15.3
+    },
+    {
+     "nutrientId": 1008,
+     "value": 249
+    }
+   ]
+  },
+  {
+   "fdcId": 2708686,
+   "description": "Pizza rolls",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.19
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.5
+    },
+    {
+     "nutrientId": 1005,
+     "value": 53.39
+    },
+    {
+     "nutrientId": 1008,
+     "value": 345
+    }
+   ]
+  },
+  {
+   "fdcId": 172041,
+   "description": "PIZZA HUT 12\" Cheese Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 12.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.9
+    },
+    {
+     "nutrientId": 1008,
+     "value": 280
+    },
+    {
+     "nutrientId": 1003,
+     "value": 11.7
+    }
+   ]
+  },
+  {
+   "fdcId": 173280,
+   "description": "PIZZA HUT 12\" Pepperoni Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.0
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.2
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.5
+    },
+    {
+     "nutrientId": 1008,
+     "value": 298
+    }
+   ]
+  },
+  {
+   "fdcId": 173291,
+   "description": "PIZZA HUT 14\" Cheese Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1005,
+     "value": 32.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 276
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1003,
+     "value": 10.8
+    }
+   ]
+  },
+  {
+   "fdcId": 170774,
+   "description": "PIZZA HUT 14\" Cheese Pizza, Stuffed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 11.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 274
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.2
+    }
+   ]
+  },
+  {
+   "fdcId": 172053,
+   "description": "PIZZA HUT 14\" Pepperoni Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.5
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 291
+    }
+   ]
+  },
+  {
+   "fdcId": 170372,
+   "description": "PIZZA HUT 14\" Sausage Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 13.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 287
+    },
+    {
+     "nutrientId": 1003,
+     "value": 11.1
+    }
+   ]
+  },
+  {
+   "fdcId": 2708699,
+   "description": "Breakfast pizza with egg",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 14.02
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.5
+    },
+    {
+     "nutrientId": 1005,
+     "value": 25.63
+    },
+    {
+     "nutrientId": 1008,
+     "value": 292
+    }
+   ]
+  },
+  {
+   "fdcId": 172040,
+   "description": "PIZZA HUT 12\" Cheese Pizza, Hand-Tossed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.9
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.9
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 271
+    }
+   ]
+  }
+ ],
+ "pizza cheese": [
+  {
+   "fdcId": 2705787,
+   "description": "Topping from cheese pizza",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 16.86
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.67
+    },
+    {
+     "nutrientId": 1005,
+     "value": 7.62
+    },
+    {
+     "nutrientId": 1008,
+     "value": 230
+    }
+   ]
+  },
+  {
+   "fdcId": 2708675,
+   "description": "Pizza, no cheese, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.58
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.26
+    },
+    {
+     "nutrientId": 1005,
+     "value": 38.28
+    },
+    {
+     "nutrientId": 1008,
+     "value": 293
+    }
+   ]
+  },
+  {
+   "fdcId": 2708618,
+   "description": "Pizza, cheese, stuffed crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.23
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.63
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30
+    },
+    {
+     "nutrientId": 1008,
+     "value": 274
+    }
+   ]
+  },
+  {
+   "fdcId": 172041,
+   "description": "PIZZA HUT 12\" Cheese Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 12.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.9
+    },
+    {
+     "nutrientId": 1008,
+     "value": 280
+    },
+    {
+     "nutrientId": 1003,
+     "value": 11.7
+    }
+   ]
+  },
+  {
+   "fdcId": 173291,
+   "description": "PIZZA HUT 14\" Cheese Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1005,
+     "value": 32.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 276
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1003,
+     "value": 10.8
+    }
+   ]
+  },
+  {
+   "fdcId": 170774,
+   "description": "PIZZA HUT 14\" Cheese Pizza, Stuffed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 11.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 274
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.2
+    }
+   ]
+  },
+  {
+   "fdcId": 2708674,
+   "description": "Pizza, no cheese, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.46
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.69
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31
+    },
+    {
+     "nutrientId": 1008,
+     "value": 276
+    }
+   ]
+  },
+  {
+   "fdcId": 172040,
+   "description": "PIZZA HUT 12\" Cheese Pizza, Hand-Tossed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.9
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.9
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 271
+    }
+   ]
+  },
+  {
+   "fdcId": 173290,
+   "description": "PIZZA HUT 14\" Cheese Pizza, Hand-Tossed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.0
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.4
+    },
+    {
+     "nutrientId": 1005,
+     "value": 33.4
+    },
+    {
+     "nutrientId": 1008,
+     "value": 275
+    }
+   ]
+  },
+  {
+   "fdcId": 2708623,
+   "description": "Pizza, extra cheese, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.41
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.83
+    },
+    {
+     "nutrientId": 1008,
+     "value": 272
+    }
+   ]
+  },
+  {
+   "fdcId": 2708677,
+   "description": "White pizza, cheese, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.8
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.41
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.82
+    },
+    {
+     "nutrientId": 1008,
+     "value": 280
+    }
+   ]
+  },
+  {
+   "fdcId": 2708634,
+   "description": "Pizza, cheese, with fruit, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.57
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.3
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.89
+    },
+    {
+     "nutrientId": 1008,
+     "value": 246
+    }
+   ]
+  },
+  {
+   "fdcId": 2708633,
+   "description": "Pizza, cheese, with fruit, medium crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.96
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.45
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.81
+    },
+    {
+     "nutrientId": 1008,
+     "value": 239
+    }
+   ]
+  },
+  {
+   "fdcId": 2708632,
+   "description": "Pizza, cheese, with fruit, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.51
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.06
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.01
+    },
+    {
+     "nutrientId": 1008,
+     "value": 230
+    }
+   ]
+  },
+  {
+   "fdcId": 2708622,
+   "description": "Pizza, extra cheese, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.08
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.29
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.71
+    },
+    {
+     "nutrientId": 1008,
+     "value": 268
+    }
+   ]
+  },
+  {
+   "fdcId": 2708676,
+   "description": "White pizza, cheese, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.4
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.66
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.58
+    },
+    {
+     "nutrientId": 1008,
+     "value": 285
+    }
+   ]
+  },
+  {
+   "fdcId": 172042,
+   "description": "PIZZA HUT 12\" Cheese Pizza, THIN 'N CRISPY Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 15.3
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 303
+    }
+   ]
+  },
+  {
+   "fdcId": 172051,
+   "description": "PIZZA HUT 14\" Cheese Pizza, THIN 'N CRISPY Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.4
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 34.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 306
+    }
+   ]
+  },
+  {
+   "fdcId": 2708679,
+   "description": "White pizza, cheese, with vegetables, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.02
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.14
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.82
+    },
+    {
+     "nutrientId": 1008,
+     "value": 244
+    }
+   ]
+  },
+  {
+   "fdcId": 2708613,
+   "description": "Pizza, cheese, from frozen, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.36
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.28
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.02
+    },
+    {
+     "nutrientId": 1008,
+     "value": 268
+    }
+   ]
+  },
+  {
+   "fdcId": 2708694,
+   "description": "Pizza, cheese, gluten-free thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.81
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.88
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.54
+    },
+    {
+     "nutrientId": 1008,
+     "value": 261
+    }
+   ]
+  },
+  {
+   "fdcId": 2708631,
+   "description": "Pizza with cheese and extra vegetables, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.51
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.46
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.44
+    },
+    {
+     "nutrientId": 1008,
+     "value": 240
+    }
+   ]
+  },
+  {
+   "fdcId": 2708688,
+   "description": "Pizza, cheese, whole wheat thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.4
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.4
+    },
+    {
+     "nutrientId": 1005,
+     "value": 32.96
+    },
+    {
+     "nutrientId": 1008,
+     "value": 265
+    }
+   ]
+  },
+  {
+   "fdcId": 2708681,
+   "description": "White pizza, cheese, with meat, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.84
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 296
+    }
+   ]
+  },
+  {
+   "fdcId": 2708612,
+   "description": "Pizza, cheese, from frozen, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.91
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.07
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 263
+    }
+   ]
+  }
+ ],
+ "pizza cheese thin crust": [
+  {
+   "fdcId": 2708674,
+   "description": "Pizza, no cheese, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.46
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.69
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31
+    },
+    {
+     "nutrientId": 1008,
+     "value": 276
+    }
+   ]
+  },
+  {
+   "fdcId": 2708632,
+   "description": "Pizza, cheese, with fruit, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.51
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.06
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.01
+    },
+    {
+     "nutrientId": 1008,
+     "value": 230
+    }
+   ]
+  },
+  {
+   "fdcId": 2708622,
+   "description": "Pizza, extra cheese, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.08
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.29
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.71
+    },
+    {
+     "nutrientId": 1008,
+     "value": 268
+    }
+   ]
+  },
+  {
+   "fdcId": 2708676,
+   "description": "White pizza, cheese, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.4
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.66
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.58
+    },
+    {
+     "nutrientId": 1008,
+     "value": 285
+    }
+   ]
+  },
+  {
+   "fdcId": 2708612,
+   "description": "Pizza, cheese, from frozen, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.91
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.07
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 263
+    }
+   ]
+  },
+  {
+   "fdcId": 2708629,
+   "description": "Pizza with cheese and extra vegetables, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 8.68
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 25.98
+    },
+    {
+     "nutrientId": 1008,
+     "value": 208
+    }
+   ]
+  },
+  {
+   "fdcId": 2708678,
+   "description": "White pizza, cheese, with vegetables, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.13
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.68
+    },
+    {
+     "nutrientId": 1005,
+     "value": 23.59
+    },
+    {
+     "nutrientId": 1008,
+     "value": 241
+    }
+   ]
+  },
+  {
+   "fdcId": 2708693,
+   "description": "Pizza, cheese, gluten-free thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 8.73
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.62
+    },
+    {
+     "nutrientId": 1005,
+     "value": 26.53
+    },
+    {
+     "nutrientId": 1008,
+     "value": 264
+    }
+   ]
+  },
+  {
+   "fdcId": 2708687,
+   "description": "Pizza, cheese, whole wheat thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.77
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.38
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.62
+    },
+    {
+     "nutrientId": 1008,
+     "value": 267
+    }
+   ]
+  },
+  {
+   "fdcId": 2708680,
+   "description": "White pizza, cheese, with meat, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.56
+    },
+    {
+     "nutrientId": 1004,
+     "value": 17.36
+    },
+    {
+     "nutrientId": 1005,
+     "value": 22.77
+    },
+    {
+     "nutrientId": 1008,
+     "value": 304
+    }
+   ]
+  },
+  {
+   "fdcId": 2708624,
+   "description": "Pizza, cheese, with vegetables, from frozen, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.24
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.81
+    },
+    {
+     "nutrientId": 1005,
+     "value": 26.51
+    },
+    {
+     "nutrientId": 1008,
+     "value": 240
+    }
+   ]
+  },
+  {
+   "fdcId": 2708620,
+   "description": "Pizza, cheese, from school lunch, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.72
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.91
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.31
+    },
+    {
+     "nutrientId": 1008,
+     "value": 247
+    }
+   ]
+  },
+  {
+   "fdcId": 2708697,
+   "description": "Pizza, cheese and vegetables, gluten-free thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.18
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.64
+    },
+    {
+     "nutrientId": 1005,
+     "value": 22.72
+    },
+    {
+     "nutrientId": 1008,
+     "value": 223
+    }
+   ]
+  },
+  {
+   "fdcId": 2708691,
+   "description": "Pizza, cheese and vegetables, whole wheat thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.61
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.64
+    },
+    {
+     "nutrientId": 1005,
+     "value": 24.39
+    },
+    {
+     "nutrientId": 1008,
+     "value": 226
+    }
+   ]
+  },
+  {
+   "fdcId": 2708682,
+   "description": "White pizza, cheese, with meat and vegetables, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.07
+    },
+    {
+     "nutrientId": 1004,
+     "value": 15.31
+    },
+    {
+     "nutrientId": 1005,
+     "value": 21.06
+    },
+    {
+     "nutrientId": 1008,
+     "value": 272
+    }
+   ]
+  },
+  {
+   "fdcId": 172043,
+   "description": "DOMINO'S 14\" Cheese Pizza, Crunchy Thin Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 15.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 298
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.3
+    }
+   ]
+  },
+  {
+   "fdcId": 173289,
+   "description": "LITTLE CAESARS 14\" Cheese Pizza, Thin Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 17.0
+    },
+    {
+     "nutrientId": 1005,
+     "value": 22.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 309
+    },
+    {
+     "nutrientId": 1003,
+     "value": 16.2
+    }
+   ]
+  },
+  {
+   "fdcId": 173287,
+   "description": "PAPA JOHN'S 14\" Cheese Pizza, Thin Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 15.7
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.3
+    },
+    {
+     "nutrientId": 1005,
+     "value": 26.3
+    },
+    {
+     "nutrientId": 1008,
+     "value": 295
+    }
+   ]
+  },
+  {
+   "fdcId": 170373,
+   "description": "Pizza, cheese topping, thin crust, frozen, cooked",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 11.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 263
+    },
+    {
+     "nutrientId": 1003,
+     "value": 11.9
+    }
+   ]
+  },
+  {
+   "fdcId": 172042,
+   "description": "PIZZA HUT 12\" Cheese Pizza, THIN 'N CRISPY Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 15.3
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 303
+    }
+   ]
+  },
+  {
+   "fdcId": 172051,
+   "description": "PIZZA HUT 14\" Cheese Pizza, THIN 'N CRISPY Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.4
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 34.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 306
+    }
+   ]
+  },
+  {
+   "fdcId": 2708672,
+   "description": "Pizza with beans and vegetables, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 9.29
+    },
+    {
+     "nutrientId": 1004,
+     "value": 6.63
+    },
+    {
+     "nutrientId": 1005,
+     "value": 26.88
+    },
+    {
+     "nutrientId": 1008,
+     "value": 203
+    }
+   ]
+  },
+  {
+   "fdcId": 2708657,
+   "description": "Pizza with extra meat, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 14.72
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.36
+    },
+    {
+     "nutrientId": 1005,
+     "value": 24.25
+    },
+    {
+     "nutrientId": 1008,
+     "value": 277
+    }
+   ]
+  },
+  {
+   "fdcId": 2708669,
+   "description": "Pizza with meat and fruit, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.88
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.34
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.01
+    },
+    {
+     "nutrientId": 1008,
+     "value": 227
+    }
+   ]
+  },
+  {
+   "fdcId": 2708615,
+   "description": "Pizza, cheese, from restaurant or fast food, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.39
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.69
+    },
+    {
+     "nutrientId": 1005,
+     "value": 33.33
+    },
+    {
+     "nutrientId": 1008,
+     "value": 266
+    }
+   ]
+  }
+ ],
+ "pizza pepperoni": [
+  {
+   "fdcId": 2708642,
+   "description": "Pizza with pepperoni, stuffed crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.92
+    },
+    {
+     "nutrientId": 1004,
+     "value": 15.01
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.19
+    },
+    {
+     "nutrientId": 1008,
+     "value": 296
+    }
+   ]
+  },
+  {
+   "fdcId": 173280,
+   "description": "PIZZA HUT 12\" Pepperoni Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.0
+    },
+    {
+     "nutrientId": 1004,
+     "value": 14.2
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.5
+    },
+    {
+     "nutrientId": 1008,
+     "value": 298
+    }
+   ]
+  },
+  {
+   "fdcId": 172053,
+   "description": "PIZZA HUT 14\" Pepperoni Pizza, Pan Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.5
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 291
+    }
+   ]
+  },
+  {
+   "fdcId": 173279,
+   "description": "PIZZA HUT 12\" Pepperoni Pizza, Hand-Tossed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 11.4
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 280
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.9
+    }
+   ]
+  },
+  {
+   "fdcId": 172052,
+   "description": "PIZZA HUT 14\" Pepperoni Pizza, Hand-Tossed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 12.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 32.1
+    },
+    {
+     "nutrientId": 1008,
+     "value": 291
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.2
+    }
+   ]
+  },
+  {
+   "fdcId": 2708637,
+   "description": "Pizza with pepperoni, from frozen, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.66
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.43
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.08
+    },
+    {
+     "nutrientId": 1008,
+     "value": 276
+    }
+   ]
+  },
+  {
+   "fdcId": 2708635,
+   "description": "Pizza with pepperoni, from frozen, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.25
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.71
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.52
+    },
+    {
+     "nutrientId": 1008,
+     "value": 274
+    }
+   ]
+  },
+  {
+   "fdcId": 2708636,
+   "description": "Pizza with pepperoni, from frozen, medium crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.46
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.07
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 275
+    }
+   ]
+  },
+  {
+   "fdcId": 170369,
+   "description": "PIZZA HUT 14\" Pepperoni Pizza, THIN 'N CRISPY Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 14.1
+    },
+    {
+     "nutrientId": 1004,
+     "value": 16.2
+    },
+    {
+     "nutrientId": 1005,
+     "value": 32.7
+    },
+    {
+     "nutrientId": 1008,
+     "value": 333
+    }
+   ]
+  },
+  {
+   "fdcId": 2708645,
+   "description": "Pizza with pepperoni, from school lunch, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 14.35
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.82
+    },
+    {
+     "nutrientId": 1005,
+     "value": 28.3
+    },
+    {
+     "nutrientId": 1008,
+     "value": 259
+    }
+   ]
+  },
+  {
+   "fdcId": 173295,
+   "description": "Fast Food, Pizza Chain, 14\" pizza, pepperoni topping, regular crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.7
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.9
+    },
+    {
+     "nutrientId": 1005,
+     "value": 32.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 282
+    }
+   ]
+  },
+  {
+   "fdcId": 173296,
+   "description": "Fast Food, Pizza Chain, 14\" pizza, pepperoni topping, thick crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 12.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 287
+    },
+    {
+     "nutrientId": 1003,
+     "value": 11.5
+    }
+   ]
+  },
+  {
+   "fdcId": 170762,
+   "description": "Fast Food, Pizza Chain, 14\" pizza, pepperoni topping, thin crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 17.6
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 331
+    },
+    {
+     "nutrientId": 1003,
+     "value": 14.0
+    }
+   ]
+  },
+  {
+   "fdcId": 2708653,
+   "description": "Pizza, with meat other than pepperoni, stuffed crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.81
+    },
+    {
+     "nutrientId": 1004,
+     "value": 13.05
+    },
+    {
+     "nutrientId": 1005,
+     "value": 27.28
+    },
+    {
+     "nutrientId": 1008,
+     "value": 278
+    }
+   ]
+  },
+  {
+   "fdcId": 170370,
+   "description": "DOMINO'S 14\" Pepperoni Pizza, Crunchy Thin Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 19.0
+    },
+    {
+     "nutrientId": 1005,
+     "value": 25.4
+    },
+    {
+     "nutrientId": 1008,
+     "value": 328
+    },
+    {
+     "nutrientId": 1003,
+     "value": 13.9
+    }
+   ]
+  },
+  {
+   "fdcId": 173285,
+   "description": "PAPA JOHN'S 14\" Pepperoni Pizza, Original Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 11.9
+    },
+    {
+     "nutrientId": 1003,
+     "value": 12.0
+    },
+    {
+     "nutrientId": 1005,
+     "value": 30.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 275
+    }
+   ]
+  },
+  {
+   "fdcId": 2708643,
+   "description": "Pizza with pepperoni, from school lunch, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.78
+    },
+    {
+     "nutrientId": 1004,
+     "value": 8.62
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.24
+    },
+    {
+     "nutrientId": 1008,
+     "value": 254
+    }
+   ]
+  },
+  {
+   "fdcId": 172096,
+   "description": "Pizza, pepperoni topping, regular crust, frozen, cooked",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 13.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 24.7
+    },
+    {
+     "nutrientId": 1008,
+     "value": 274
+    },
+    {
+     "nutrientId": 1003,
+     "value": 14.4
+    }
+   ]
+  },
+  {
+   "fdcId": 2708644,
+   "description": "Pizza, with pepperoni, from school lunch, medium crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.56
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.22
+    },
+    {
+     "nutrientId": 1005,
+     "value": 29.77
+    },
+    {
+     "nutrientId": 1008,
+     "value": 256
+    }
+   ]
+  },
+  {
+   "fdcId": 2708641,
+   "description": "Pizza with pepperoni, from restaurant or fast food, thick crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.49
+    },
+    {
+     "nutrientId": 1004,
+     "value": 12.58
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.84
+    },
+    {
+     "nutrientId": 1008,
+     "value": 287
+    }
+   ]
+  },
+  {
+   "fdcId": 170760,
+   "description": "DIGIORNO Pizza, pepperoni topping, rising crust, frozen, baked",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.5
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 265
+    }
+   ]
+  },
+  {
+   "fdcId": 172044,
+   "description": "DOMINO'S 14\" Pepperoni Pizza, Classic Hand-Tossed Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.9
+    },
+    {
+     "nutrientId": 1008,
+     "value": 273
+    }
+   ]
+  },
+  {
+   "fdcId": 172045,
+   "description": "DOMINO'S 14\" Pepperoni Pizza, Ultimate Deep Dish Crust",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 12.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.9
+    },
+    {
+     "nutrientId": 1008,
+     "value": 283
+    },
+    {
+     "nutrientId": 1003,
+     "value": 11.5
+    }
+   ]
+  },
+  {
+   "fdcId": 2708640,
+   "description": "Pizza with pepperoni, from restaurant or fast food,  medium crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.74
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.91
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.98
+    },
+    {
+     "nutrientId": 1008,
+     "value": 282
+    }
+   ]
+  },
+  {
+   "fdcId": 2708639,
+   "description": "Pizza with pepperoni, from restaurant or fast food, thin crust",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.74
+    },
+    {
+     "nutrientId": 1004,
+     "value": 11.91
+    },
+    {
+     "nutrientId": 1005,
+     "value": 31.98
+    },
+    {
+     "nutrientId": 1008,
+     "value": 282
+    }
+   ]
+  }
+ ],
+ "lasagna": [
+  {
+   "fdcId": 2586090,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 5.53
+    },
+    {
+     "nutrientId": 1004,
+     "value": 4.15
+    },
+    {
+     "nutrientId": 1005,
+     "value": 10.1
+    },
+    {
+     "nutrientId": 1008,
+     "value": 101
+    }
+   ]
+  },
+  {
+   "fdcId": 2009302,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 8.24
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.94
+    },
+    {
+     "nutrientId": 1005,
+     "value": 17.1
+    },
+    {
+     "nutrientId": 1008,
+     "value": 171
+    }
+   ]
+  },
+  {
+   "fdcId": 2284608,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.5
+    },
+    {
+     "nutrientId": 1004,
+     "value": 1.79
+    },
+    {
+     "nutrientId": 1005,
+     "value": 73.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 357
+    }
+   ]
+  },
+  {
+   "fdcId": 2659717,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 5.29
+    },
+    {
+     "nutrientId": 1004,
+     "value": 3.96
+    },
+    {
+     "nutrientId": 1005,
+     "value": 10.1
+    },
+    {
+     "nutrientId": 1008,
+     "value": 101
+    }
+   ]
+  },
+  {
+   "fdcId": 2118417,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 8.24
+    },
+    {
+     "nutrientId": 1004,
+     "value": 7.06
+    },
+    {
+     "nutrientId": 1005,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 165
+    }
+   ]
+  },
+  {
+   "fdcId": 2187417,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 5.56
+    },
+    {
+     "nutrientId": 1004,
+     "value": 4.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 5.81
+    },
+    {
+     "nutrientId": 1008,
+     "value": 88.0
+    }
+   ]
+  },
+  {
+   "fdcId": 356499,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 12.5
+    },
+    {
+     "nutrientId": 1004,
+     "value": 1.79
+    },
+    {
+     "nutrientId": 1005,
+     "value": 73.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 375
+    }
+   ]
+  },
+  {
+   "fdcId": 1918823,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.9
+    },
+    {
+     "nutrientId": 1004,
+     "value": 2.38
+    },
+    {
+     "nutrientId": 1005,
+     "value": 57.1
+    },
+    {
+     "nutrientId": 1008,
+     "value": 310
+    }
+   ]
+  },
+  {
+   "fdcId": 2118406,
+   "description": "LASAGNA",
+   "dataType": "Branded",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 8.1
+    },
+    {
+     "nutrientId": 1004,
+     "value": 6.34
+    },
+    {
+     "nutrientId": 1005,
+     "value": 11.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 158
+    }
+   ]
+  },
+  {
+   "fdcId": 2708750,
+   "description": "Lasagna with meat",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 7.45
+    },
+    {
+     "nutrientId": 1004,
+     "value": 4.97
+    },
+    {
+     "nutrientId": 1005,
+     "value": 16.17
+    },
+    {
+     "nutrientId": 1008,
+     "value": 139
+    }
+   ]
+  },
+  {
+   "fdcId": 2708758,
+   "description": "Lasagna, meatless",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 6.54
+    },
+    {
+     "nutrientId": 1004,
+     "value": 5.33
+    },
+    {
+     "nutrientId": 1005,
+     "value": 13.84
+    },
+    {
+     "nutrientId": 1008,
+     "value": 130
+    }
+   ]
+  },
+  {
+   "fdcId": 2708751,
+   "description": "Lasagna with meat, canned",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 3.24
+    },
+    {
+     "nutrientId": 1004,
+     "value": 3.41
+    },
+    {
+     "nutrientId": 1005,
+     "value": 13.26
+    },
+    {
+     "nutrientId": 1008,
+     "value": 97
+    }
+   ]
+  },
+  {
+   "fdcId": 2708756,
+   "description": "Lasagna with chicken or turkey",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.74
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.37
+    },
+    {
+     "nutrientId": 1005,
+     "value": 14.01
+    },
+    {
+     "nutrientId": 1008,
+     "value": 205
+    }
+   ]
+  },
+  {
+   "fdcId": 2708755,
+   "description": "Lasagna with meat and spinach",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.33
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.79
+    },
+    {
+     "nutrientId": 1005,
+     "value": 13.76
+    },
+    {
+     "nutrientId": 1008,
+     "value": 207
+    }
+   ]
+  },
+  {
+   "fdcId": 2708754,
+   "description": "Lasagna with meat, frozen",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 6.63
+    },
+    {
+     "nutrientId": 1004,
+     "value": 4.42
+    },
+    {
+     "nutrientId": 1005,
+     "value": 14.39
+    },
+    {
+     "nutrientId": 1008,
+     "value": 124
+    }
+   ]
+  },
+  {
+   "fdcId": 2708759,
+   "description": "Lasagna, meatless, with vegetables",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.2
+    },
+    {
+     "nutrientId": 1004,
+     "value": 9.38
+    },
+    {
+     "nutrientId": 1005,
+     "value": 14.52
+    },
+    {
+     "nutrientId": 1008,
+     "value": 188
+    }
+   ]
+  },
+  {
+   "fdcId": 2708752,
+   "description": "Lasagna with meat, from restaurant",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 10.83
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.69
+    },
+    {
+     "nutrientId": 1005,
+     "value": 11.36
+    },
+    {
+     "nutrientId": 1008,
+     "value": 185
+    }
+   ]
+  },
+  {
+   "fdcId": 2708753,
+   "description": "Lasagna with meat, home recipe",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.63
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.92
+    },
+    {
+     "nutrientId": 1005,
+     "value": 13.1
+    },
+    {
+     "nutrientId": 1008,
+     "value": 206
+    }
+   ]
+  },
+  {
+   "fdcId": 173333,
+   "description": "Lasagna, cheese, frozen, prepared",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 6.54
+    },
+    {
+     "nutrientId": 1004,
+     "value": 5.33
+    },
+    {
+     "nutrientId": 1005,
+     "value": 13.8
+    },
+    {
+     "nutrientId": 1008,
+     "value": 130
+    }
+   ]
+  },
+  {
+   "fdcId": 168960,
+   "description": "Lasagna, cheese, frozen, unprepared",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 4.22
+    },
+    {
+     "nutrientId": 1003,
+     "value": 5.06
+    },
+    {
+     "nutrientId": 1005,
+     "value": 21.6
+    },
+    {
+     "nutrientId": 1008,
+     "value": 145
+    }
+   ]
+  },
+  {
+   "fdcId": 172106,
+   "description": "Lasagna, Vegetable, frozen, baked",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 6.04
+    },
+    {
+     "nutrientId": 1003,
+     "value": 6.87
+    },
+    {
+     "nutrientId": 1005,
+     "value": 14.2
+    },
+    {
+     "nutrientId": 1008,
+     "value": 139
+    }
+   ]
+  },
+  {
+   "fdcId": 2708757,
+   "description": "Lasagna, with chicken or turkey, and spinach",
+   "dataType": "Survey (FNDDS)",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 13.51
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.14
+    },
+    {
+     "nutrientId": 1005,
+     "value": 13.76
+    },
+    {
+     "nutrientId": 1008,
+     "value": 201
+    }
+   ]
+  },
+  {
+   "fdcId": 169851,
+   "description": "OLIVE GARDEN, lasagna classico",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1003,
+     "value": 11.3
+    },
+    {
+     "nutrientId": 1004,
+     "value": 10.8
+    },
+    {
+     "nutrientId": 1005,
+     "value": 10.3
+    },
+    {
+     "nutrientId": 1008,
+     "value": 184
+    }
+   ]
+  },
+  {
+   "fdcId": 169850,
+   "description": "Restaurant, Italian, lasagna with meat",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 10.7
+    },
+    {
+     "nutrientId": 1005,
+     "value": 11.4
+    },
+    {
+     "nutrientId": 1008,
+     "value": 185
+    },
+    {
+     "nutrientId": 1003,
+     "value": 10.8
+    }
+   ]
+  },
+  {
+   "fdcId": 173489,
+   "description": "Babyfood, dinner, beef lasagna, toddler",
+   "dataType": "SR Legacy",
+   "foodNutrients": [
+    {
+     "nutrientId": 1004,
+     "value": 2.1
+    },
+    {
+     "nutrientId": 1005,
+     "value": 10.0
+    },
+    {
+     "nutrientId": 1008,
+     "value": 77.0
+    },
+    {
+     "nutrientId": 1003,
+     "value": 4.2
+    }
+   ]
+  }
  ]
 }

@@ -23,6 +23,9 @@ async def upsert(db: AsyncSession, name: str, match: NutritionMatch, now: dateti
         existing.fat_g_per_100g = match.fat_g_per_100g
         existing.brand = match.brand
         existing.source_ref = match.source_ref
+        # Keep source identity alongside the query alias so later lookups can
+        # reject a conflicting recipe without fetching its nutrition again.
+        existing.raw_payload = {**(existing.raw_payload or {}), "source_name": match.name}
         existing.fetched_at = now
         await db.flush()
         return existing
@@ -32,6 +35,7 @@ async def upsert(db: AsyncSession, name: str, match: NutritionMatch, now: dateti
         brand=match.brand,
         source=match.source,
         source_ref=match.source_ref,
+        raw_payload={"source_name": match.name},
         kcal_per_100g=match.kcal_per_100g,
         protein_g_per_100g=match.protein_g_per_100g,
         carbs_g_per_100g=match.carbs_g_per_100g,

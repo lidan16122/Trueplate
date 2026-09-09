@@ -11,6 +11,7 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.services.detection import workflow
 from app.services.detection.detector import (
     TOOL_NAME,
     ZOOM_TOOL_NAME,
@@ -57,6 +58,12 @@ def _service(db: AsyncSession, responses: list, *, transport=None) -> tuple:
     return DetectionService(resolver, client=fake), fake
 
 
+def _repair(*foods: dict):
+    return tool_use(
+        "complete_food_portions", {f"food_{index}": food for index, food in enumerate(foods, 1)}
+    )
+
+
 async def test_text_detection_resolves_every_food_it_reports(db_session: AsyncSession) -> None:
     transport = nutrition_transport(usda=usda_food("Chicken, breast, grilled", 165.0))
     service, _ = _service(
@@ -74,6 +81,65 @@ async def test_text_detection_resolves_every_food_it_reports(db_session: AsyncSe
     # 165 kcal/100 g scaled to the model's 150 g estimate.
     assert item.nutrition.calories == pytest.approx(247.5)
     assert response.totals.calories == pytest.approx(247.5)
+
+
+async def test_two_pizza_slices_are_one_sourced_portion_and_can_be_cached(
+    db_session: AsyncSession,
+) -> None:
+    pizza = {
+        **food_result()["foods"][0],
+        "label": "cheese pizza",
+        "estimated_grams": 200,
+        "search_terms": ["pizza cheese", "pizza"],
+        "household_quantity": 2,
+        "household_unit": "slice",
+        "preparation": "baked",
+    }
+    service, fake = _service(
+        db_session,
+        [message([tool_use(TOOL_NAME, food_result(foods=[pizza]))])],
+        transport=nutrition_transport(usda=usda_food("Pizza, cheese, thin crust", 250, fdc_id=42)),
+    )
+
+    first = await workflow.detect_photo(db_session, service, TINY_JPEG, None, None)
+    again = await workflow.detect_photo(db_session, service, TINY_JPEG, None, None)
+
+    assert len(first.items) == 1
+    item = first.items[0]
+    assert item.detected.household_quantity == 2
+    assert item.detected.household_unit == "slice"
+    assert item.detected.estimated_grams == 200
+    assert item.matched.source_ref == "42"
+    assert item.matched.kcal_per_100g == 250
+    assert first.totals.calories == 500
+    assert first.is_provisional is False
+    assert first.cached is False
+    assert again.cached is True
+    assert again.items == first.items
+    assert len(fake.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "labels",
+    [
+        ["cheese pizza", "pepperoni pizza"],
+        ["pizza", "salad", "garlic dip"],
+        ["rice", "chicken"],
+        ["pasta", "beef"],
+        ["lasagna"],
+        ["apple"],
+    ],
+)
+async def test_separate_foods_and_complete_dishes_keep_their_reported_portions(
+    db_session: AsyncSession, labels: list[str]
+) -> None:
+    foods = [
+        {**food_result()["foods"][0], "label": label, "search_terms": [label]} for label in labels
+    ]
+    service, _ = _service(db_session, [message([tool_use(TOOL_NAME, food_result(foods=foods))])])
+    response = await service.detect_photo(TINY_JPEG)
+    assert [item.detected.label for item in response.items] == labels
+    assert response.is_provisional is False
 
 
 async def test_non_food_input_is_refused_rather_than_answered(db_session: AsyncSession) -> None:
@@ -147,8 +213,19 @@ async def test_zoom_request_returns_a_crop_and_the_loop_continues(
         db_session,
         [
             message(
-                [tool_use(ZOOM_TOOL_NAME, {"x": 0.1, "y": 0.1, "width": 0.5, "height": 0.5,
-                                           "reason": "check the sauce"}, "toolu_zoom")]
+                [
+                    tool_use(
+                        ZOOM_TOOL_NAME,
+                        {
+                            "x": 0.1,
+                            "y": 0.1,
+                            "width": 0.5,
+                            "height": 0.5,
+                            "reason": "check the sauce",
+                        },
+                        "toolu_zoom",
+                    )
+                ]
             ),
             message([tool_use(TOOL_NAME, food_result())]),
         ],
@@ -320,7 +397,9 @@ async def test_naming_more_components_than_it_lists_is_asked_again(
                     )
                 ]
             ),
-            message([tool_use(TOOL_NAME, food_result(foods=[one, one, one]))]),
+            message(
+                [_repair(*({**one, "label": name} for name in ["rice", "chicken", "broccoli"]))]
+            ),
         ],
         transport=nutrition_transport(usda=usda_food("Chicken, breast, grilled", 165.0)),
     )
@@ -347,10 +426,9 @@ async def test_a_count_that_agrees_is_not_second_guessed(db_session: AsyncSessio
 async def test_a_stubborn_miscount_still_returns_what_it_found(
     db_session: AsyncSession,
 ) -> None:
-    """Re-asking is capped at one. A model that disagrees with itself twice must
-    not cost the user their meal — a short list beats no list."""
+    """An overfull list cannot be assigned to fewer inventory names reliably."""
     one = food_result()["foods"][0]
-    short = food_result(foods=[one], components=["rice", "chicken", "peas", "gravy"])
+    short = food_result(foods=[one, one], components=["rice"])
     service, fake = _service(
         db_session,
         [message([tool_use(TOOL_NAME, short)]), message([tool_use(TOOL_NAME, short)])],
@@ -360,7 +438,7 @@ async def test_a_stubborn_miscount_still_returns_what_it_found(
     response = await service.detect_text("a big plate")
 
     assert len(fake.calls) == 2, "asked once, then accepted"
-    assert len(response.items) == 1
+    assert len(response.items) == 2
 
 
 async def test_a_payload_broken_beyond_its_food_list_is_a_clean_failure(
@@ -395,7 +473,9 @@ async def test_a_re_ask_answers_the_tool_call_it_rejects(db_session: AsyncSessio
                     )
                 ]
             ),
-            message([tool_use(TOOL_NAME, food_result(foods=[one, one, one]))]),
+            message(
+                [_repair(*({**one, "label": name} for name in ["rice", "chicken", "broccoli"]))]
+            ),
         ],
         transport=nutrition_transport(usda=usda_food("Chicken, breast, grilled", 165.0)),
     )
@@ -420,12 +500,10 @@ class TestProvisionalReadings:
     again. "Try again" replays the failure.
     """
 
-    async def test_a_photographed_meal_of_one_food_is_provisional(
+    async def test_a_complete_single_food_photo_is_not_provisional(
         self, db_session: AsyncSession
     ) -> None:
-        """The failure this exists for: a plate of rice, chicken, potato and
-        gravy came back as 280 g of rice, with a matching one-name inventory,
-        so it contradicted nothing and the list check stayed quiet."""
+        """One food is a valid inventory, including a whole prepared dish."""
         one = food_result()["foods"][0]
         service, _ = _service(
             db_session,
@@ -435,11 +513,9 @@ class TestProvisionalReadings:
 
         response = await service.detect_photo(TINY_JPEG)
 
-        assert response.is_provisional is True
+        assert response.is_provisional is False
 
-    async def test_a_photo_that_found_several_foods_is_kept(
-        self, db_session: AsyncSession
-    ) -> None:
+    async def test_a_photo_that_found_several_foods_is_kept(self, db_session: AsyncSession) -> None:
         """Not caching anything would make every detection cost twice."""
         one = food_result()["foods"][0]
         service, _ = _service(
@@ -455,7 +531,7 @@ class TestProvisionalReadings:
     async def test_a_typed_single_food_is_not_second_guessed(
         self, db_session: AsyncSession
     ) -> None:
-        """"a banana" is the user telling us what they ate, not us guessing from
+        """ "a banana" is the user telling us what they ate, not us guessing from
         a plate — one item is the correct answer and worth caching."""
         one = food_result()["foods"][0]
         service, _ = _service(
@@ -468,13 +544,10 @@ class TestProvisionalReadings:
 
         assert response.is_provisional is False
 
-    async def test_a_count_that_never_agreed_is_provisional(
-        self, db_session: AsyncSession
-    ) -> None:
-        """Re-asking is capped at one. A reading still short after that is the
-        model saying it did not list everything — worth showing, not keeping."""
+    async def test_a_count_that_never_agreed_is_provisional(self, db_session: AsyncSession) -> None:
+        """A disagreement left after the retry remains visible and uncached."""
         one = food_result()["foods"][0]
-        short = food_result(foods=[one, one], components=["rice", "chicken", "peas", "gravy"])
+        short = food_result(foods=[one, one], components=["rice"])
         service, _ = _service(
             db_session,
             [message([tool_use(TOOL_NAME, short)]), message([tool_use(TOOL_NAME, short)])],
@@ -517,12 +590,19 @@ async def test_a_second_different_fault_gets_its_own_re_ask(db_session: AsyncSes
     service, fake = _service(
         db_session,
         [
-            # Names three, lists one.
-            message([tool_use(TOOL_NAME, food_result(foods=[good], components=["a", "b", "c"]))]),
+            # Names two, lists one.
+            message(
+                [
+                    tool_use(
+                        TOOL_NAME,
+                        food_result(foods=[good], components=[good["label"], other["label"]]),
+                    )
+                ]
+            ),
             # Asked again: two foods now, but one has an impossible mass.
-            message([tool_use(TOOL_NAME, food_result(foods=[good, bad]))]),
+            message([_repair(good, bad)]),
             # Asked about *that*: both usable.
-            message([tool_use(TOOL_NAME, food_result(foods=[good, other]))]),
+            message([_repair(good, other)]),
         ],
         transport=nutrition_transport(usda=usda_food("Chicken, breast, grilled", 165.0)),
     )
@@ -532,15 +612,13 @@ async def test_a_second_different_fault_gets_its_own_re_ask(db_session: AsyncSes
     assert len(fake.calls) == 3, "the two faults are different and each is worth asking about"
     assert len(response.items) == 2, "nothing should have been dropped in silence"
 
-    first, second = (
-        fake.calls[i]["messages"][-1]["content"][0]["content"] for i in (1, 2)
-    )
+    first, second = (fake.calls[i]["messages"][-1]["content"][0]["content"] for i in (1, 2))
     assert "component" in first
     assert "estimated_grams" in second
 
 
 async def test_the_re_ask_names_the_missing_foods(db_session: AsyncSession) -> None:
-    """"You named 5 but returned 1" made the model rebuild its own list from a
+    """ "You named 5 but returned 1" made the model rebuild its own list from a
     digit, and it came back with two. Naming them removes that step."""
     one = food_result()["foods"][0]
     service, fake = _service(
@@ -554,7 +632,7 @@ async def test_the_re_ask_names_the_missing_foods(db_session: AsyncSession) -> N
                     )
                 ]
             ),
-            message([tool_use(TOOL_NAME, food_result(foods=[one, one]))]),
+            message([_repair({**one, "label": "basmati rice"}, {**one, "label": "onion gravy"})]),
         ],
         transport=nutrition_transport(usda=usda_food("Chicken, breast, grilled", 165.0)),
     )
@@ -564,3 +642,49 @@ async def test_the_re_ask_names_the_missing_foods(db_session: AsyncSession) -> N
     sent = fake.calls[1]["messages"][-1]["content"][0]["content"]
     assert "basmati rice" in sent
     assert "onion gravy" in sent
+
+
+async def test_a_missing_second_pizza_gets_a_required_portion_field(
+    db_session: AsyncSession,
+) -> None:
+    cheese = {**food_result()["foods"][0], "label": "cheese pizza"}
+    pepperoni = {**cheese, "label": "pepperoni pizza"}
+    service, fake = _service(
+        db_session,
+        [
+            message(
+                [
+                    tool_use(
+                        TOOL_NAME,
+                        food_result(foods=[cheese], components=["cheese pizza", "pepperoni pizza"]),
+                    )
+                ]
+            ),
+            message([_repair(cheese, pepperoni)]),
+        ],
+    )
+    response = await service.detect_photo(TINY_JPEG)
+
+    assert [item.detected.label for item in response.items] == ["cheese pizza", "pepperoni pizza"]
+    assert response.is_provisional is False
+    tool = next(t for t in fake.calls[1]["tools"] if t["name"] == "complete_food_portions")
+    assert tool["input_schema"]["required"] == ["food_1", "food_2"]
+    assert all(t["name"] != TOOL_NAME for t in fake.calls[1]["tools"])
+
+
+@pytest.mark.parametrize("payload", [None, {"food_1": {}, "calories": 500}])
+async def test_a_broken_portion_repair_is_a_clean_failure(
+    db_session: AsyncSession, payload
+) -> None:
+    one = food_result()["foods"][0]
+    service, _ = _service(
+        db_session,
+        [
+            message(
+                [tool_use(TOOL_NAME, food_result(foods=[one], components=["rice", "chicken"]))]
+            ),
+            message([tool_use("complete_food_portions", payload)]),
+        ],
+    )
+    with pytest.raises(DetectionUnavailable):
+        await service.detect_photo(TINY_JPEG)

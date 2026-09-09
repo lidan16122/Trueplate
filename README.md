@@ -247,6 +247,7 @@ These commands also run from the repository root. They are separate from the HTT
 | `uv run --directory server python -m scripts.seed` | Insert/update development reference foods in the configured database. |
 | `uv run --directory server python -m scripts.probe_resolver` | Probe predefined foods against the configured database and live nutrition APIs; commit resolver write-backs, without calling the model. |
 | `uv run --directory server python -m scripts.probe_detection path/to/meal.jpg` | Run a fresh, paid model detection for a local photo; bypass auth/rate limits/detection cache and commit resolver write-backs. An optional second argument supplies a note. |
+| `uv run --directory server python -m scripts.eval_detection --runs 3` | Check prepared dishes and separate foods with fresh paid model calls and an in-memory database. Add `--photo path/to/two-slices.jpg` for the pizza photo case or `--verbose` for retry diagnostics. |
 | `uv run --directory server python -m scripts.eval_matching` | Score USDA ranking against the recorded fixture without network or database operations. |
 | `uv run --directory server python -m scripts.eval_matching --refresh` | Fetch USDA responses and update `server/tests/fixtures/usda_search.json`. |
 

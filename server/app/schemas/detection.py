@@ -14,7 +14,7 @@ database row.
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.models.enums import DetectionMethod, MealType
 
@@ -155,30 +155,26 @@ class FoodDetectionResult(BaseModel):
             "When this is 'not_food', return an empty foods list."
         )
     )
-    # Declared *before* ``foods``, and the ordering is the point rather than
-    # taste. Tool arguments are generated in schema order, so naming every
-    # component here first puts the inventory into the context the food list is
-    # then written against — the model reads back its own enumeration instead of
-    # recalling the image. Asked for afterwards it is a summary of a decision
-    # already made, which is how a five-component plate came back as two entries.
-    #
-    # A list of names, and it replaced a prose sentence plus an integer count.
-    # Both of those were observed failing together: the model wrote a faultless
-    # five-item description, wrote `component_count: 5`, returned one food, and
-    # when asked "you named 5 but returned 1" came back with two. A bare number
-    # makes the server's complaint arithmetic — the model has to reconstruct its
-    # own list from a digit. Names let the re-ask say *which* foods are missing,
-    # and make writing five of them and then one food a far starker thing to
-    # commit to than writing `1`.
+    # The inventory precedes portions so every loggable food has a name before
+    # its mass is generated. Names also let retries identify the missing foods.
     components: list[str] = Field(
         description=(
-            "Name every distinct food you can see, one short phrase each, before you "
-            "list anything: ['basmati rice', 'bone-in chicken drumstick', 'pulled "
-            "chicken pieces', 'potato slices in masala', 'onion masala gravy']. "
+            "Name each loggable food as served before listing its mass. Keep recognizable "
+            "prepared dishes whole: two cheese-pizza slices are ['cheese pizza']. "
+            "List independently served foods separately: ['rice', 'chicken', 'broccoli']. "
+            "Do not also list the ingredients already included in a prepared dish. "
             "`foods` must then hold exactly one entry per name here."
         )
     )
-    foods: list[DetectedFood]
+    foods: list[DetectedFood] = Field(
+        description=(
+            "The complete array of food portions, in the same order as components. "
+            "Include one object for EVERY name in components, not just the first food. "
+            "For components ['cheese pizza', 'green salad', 'garlic dip'], this array "
+            "must contain three objects: the pizza portion, the salad portion, and the "
+            "dip portion. Record the entire array in this single tool call."
+        )
+    )
     overall_confidence: float = Field(
         ge=0, le=1, description="0-1 confidence in the reading of the meal as a whole"
     )
@@ -289,11 +285,8 @@ class FoodDetectionResponse(BaseModel):
     image_hash: str | None = None
     # True when this came from the AI cache rather than a fresh model call.
     cached: bool = False
-    # The reading is worth showing but not worth *keeping*: the model disagreed
-    # with its own component count, or a photographed meal came back as a single
-    # food. Caching one of these freezes a transient failure against the photo's
-    # hash for `detections_ttl_days`, which turns "try again" into a button that
-    # replays the same wrong answer. See `api/routes/ai.py`.
+    # An inventory that still disagrees with the returned foods is worth showing
+    # but not caching, so resubmitting can produce a fresh reading.
     is_provisional: bool = False
     notes: str | None = None
 
@@ -331,11 +324,15 @@ _UNSUPPORTED_SCHEMA_KEYS = frozenset(
 def _strip_unsupported(node: object) -> object:
     """Recursively drop constraint keywords strict tool use rejects."""
     if isinstance(node, dict):
-        return {
+        stripped = {
             key: _strip_unsupported(value)
             for key, value in node.items()
             if key not in _UNSUPPORTED_SCHEMA_KEYS
         }
+        # Fixed labels in a repair are single-value enums on the wire.
+        if "const" in stripped:
+            stripped["enum"] = [stripped.pop("const")]
+        return stripped
     if isinstance(node, list):
         return [_strip_unsupported(item) for item in node]
     return node
@@ -359,10 +356,35 @@ def anthropic_tool_schema() -> dict:
             "Record the foods visible in the meal and estimate the edible mass of each "
             "in grams. Do not estimate calories or macronutrients — those are looked up "
             "from a nutrition database using the labels and search terms you provide. "
-            "`foods` takes one entry per distinct food: a plate of toast, avocado and an "
-            "egg is three entries, not one. Do not omit sides, drinks, spreads or "
-            "garnishes, and do not merge two foods into a single entry."
+            "Use one entry per loggable food as served. Keep prepared dishes such as "
+            "pizza or lasagna whole, including their ingredients. Group identical portions "
+            "with their combined mass. Include separately served sides, drinks and dips "
+            "as their own entries, without counting ingredients of a whole dish again."
         ),
         "strict": True,
         "input_schema": _strip_unsupported(FoodDetectionResult.model_json_schema()),
+    }
+
+
+def anthropic_portion_repair_tool(components: list[str]) -> tuple[type[BaseModel], dict]:
+    """Require a portion for each food the model already named.
+
+    A required object property cannot be omitted like an element of a variable-length array.
+    """
+    fields = {}
+    for index, name in enumerate(components, start=1):
+        portion = create_model(
+            f"FoodPortion{index}", __base__=DetectedFood, label=(Literal[name], ...)
+        )
+        fields[f"food_{index}"] = (portion, ...)
+    model = create_model("FoodPortions", __config__=ConfigDict(extra="forbid"), **fields)
+    return model, {
+        "name": "complete_food_portions",
+        "description": (
+            "Complete every named food portion in this one call. Each required field "
+            "has a fixed food label; supply that food's mass and search terms. "
+            "Keep complete dishes whole. Never supply calories or macronutrients."
+        ),
+        "strict": True,
+        "input_schema": _strip_unsupported(model.model_json_schema()),
     }

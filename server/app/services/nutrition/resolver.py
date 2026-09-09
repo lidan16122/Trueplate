@@ -53,6 +53,7 @@ from app.schemas.detection import (
 from app.schemas.log import SURE_THRESHOLD
 from app.services.nutrition import matches
 from app.services.nutrition.open_food_facts import OpenFoodFactsClient
+from app.services.nutrition.relevance import content_tokens, is_compatible_food
 from app.services.nutrition.usda import UsdaClient
 
 logger = logging.getLogger(__name__)
@@ -84,19 +85,16 @@ class _Hit:
     precise: bool
 
 
-def _usable(match: NutritionMatch | None) -> NutritionMatch | None:
-    """Drop a match whose figures cannot describe food, so the ladder widens.
+def _usable(match: NutritionMatch | None, identity: str) -> NutritionMatch | None:
+    """Reject incompatible identities or implausible nutrition across every source.
 
-    Every source funnels through the two pass methods below, which is why the
-    check sits here rather than in each client: a stored row, a scanned product
-    and a fetched one are all capable of carrying a unit error.
-
-    Dropping beats clamping. A clamped figure is silently wrong and gets saved;
-    a dropped one sends the resolver to the next rung, where there is usually a
-    real answer. It also keeps `FoodEntryCreate`'s bounds from rejecting the
-    user's entire meal at save time over one bad row.
+    Dropping a row lets the lookup widen instead of saving a plausible wrong answer.
     """
-    if match is None or not matches.is_plausible(match):
+    if (
+        match is None
+        or not matches.is_plausible(match)
+        or not is_compatible_food(identity, match.name)
+    ):
         return None
     return match
 
@@ -133,6 +131,10 @@ class NutritionResolver:
             # the label is always a usable query.
             terms = [detected.label]
 
+        # A wider lookup must not forget that this was a cheese pizza. Include
+        # the first search term for a dish whose display label is a local name.
+        identity = f"{detected.label} {terms[0]}"
+
         # Two passes over the same ladder, and the order *between* them is the
         # point. Open Food Facts is a barcode database searched by name: it
         # answers nearly anything, usually with a branded near-miss. Asked once
@@ -147,12 +149,12 @@ class NutritionResolver:
         # more finely a meal is decomposed, since each extra component arrives
         # with its own narrow first term.
         for index, term in enumerate(terms):
-            hit = await self._resolve_precise(term)
+            hit = await self._resolve_precise(term, identity)
             if hit is not None:
                 return await self._resolved(detected, hit, term, fell_back=index > 0)
 
         for index, term in enumerate(terms):
-            hit = await self._resolve_fallback(term)
+            hit = await self._resolve_fallback(term, identity)
             if hit is not None:
                 return await self._resolved(detected, hit, term, fell_back=index > 0)
 
@@ -175,7 +177,7 @@ class NutritionResolver:
             is_rough=True,
         )
 
-    async def _resolve_precise(self, term: str) -> _Hit | None:
+    async def _resolve_precise(self, term: str, identity: str) -> _Hit | None:
         """The whole-food rungs for one term: our table, a scanned product, USDA.
 
         The ``precise`` flag on the result is what decides whether a match may be
@@ -184,12 +186,12 @@ class NutritionResolver:
         certain it saw a banana while the source we matched it against is a bag
         of banana chips.
         """
-        cached = _usable(await self._lookup_cached(term))
+        cached = await self._lookup_cached(term, identity)
         if cached is not None:
             # Already vetted — it only got into the table by passing this same gate.
             return _Hit(cached, [], precise=True)
 
-        scanned = _usable(await self._lookup_barcode_product(term))
+        scanned = _usable(await self._lookup_barcode_product(term), identity)
         if scanned is not None:
             # Something previously scanned by name. The row got there through an
             # exact UPC, so the figures are as good as a barcode's — but the
@@ -199,7 +201,9 @@ class NutritionResolver:
             # a free-text search of every packaged good on earth.
             return _Hit(scanned, [], precise=False)
 
-        usda_matches = [m for m in await self._usda.search(term) if matches.is_plausible(m)]
+        usda_matches = [
+            m for m in await self._usda.search(term, identity=identity) if _usable(m, identity)
+        ]
         if usda_matches:
             # FoodData Central is a curated food database searched by name. A
             # top hit here is real evidence about a generic food.
@@ -207,7 +211,7 @@ class NutritionResolver:
 
         return None
 
-    async def _resolve_fallback(self, term: str) -> _Hit | None:
+    async def _resolve_fallback(self, term: str, identity: str) -> _Hit | None:
         """Open Food Facts, reached only once every rung above has missed.
 
         Excellent by barcode and weak by name: the corpus is branded packaged
@@ -217,7 +221,9 @@ class NutritionResolver:
         table — so these always surface as "Rough guess" with alternatives to
         swap to.
         """
-        off_matches = [m for m in await self._off.search(term) if matches.is_plausible(m)]
+        off_matches = [
+            m for m in await self._off.search(term, identity=identity) if _usable(m, identity)
+        ]
         if off_matches:
             return _Hit(off_matches[0], off_matches[1:], precise=False)
         return None
@@ -265,7 +271,7 @@ class NutritionResolver:
     # The foods table
     # ------------------------------------------------------------------
 
-    async def _lookup_cached(self, term: str) -> NutritionMatch | None:
+    async def _lookup_cached(self, term: str, identity: str) -> NutritionMatch | None:
         """Read ``foods`` case-insensitively, ignoring rows that have gone stale."""
         rows = await foods.by_name(self._db, canonical_term(term))
         if not rows:
@@ -285,7 +291,17 @@ class NutritionResolver:
                 -as_utc(r.fetched_at or datetime.min).timestamp(),
             )
         )
-        return matches.from_food_row(fresh[0])
+        for row in fresh:
+            # Old fetched pizza rows retained only the query alias. Refetch
+            # those on demand because their actual recipe cannot be checked.
+            if row.source != NutritionSource.SEED and "pizza" in content_tokens(identity):
+                source_name = (row.raw_payload or {}).get("source_name")
+                if not isinstance(source_name, str) or not source_name.strip():
+                    continue
+            match = _usable(matches.from_food_row(row), identity)
+            if match is not None:
+                return match
+        return None
 
     async def _lookup_barcode_product(self, term: str) -> NutritionMatch | None:
         """Look for a previously scanned product by name.

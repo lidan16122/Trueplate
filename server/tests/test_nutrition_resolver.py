@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.models.barcode import BarcodeProduct
 from app.db.models.food import Food
 from app.schemas.detection import DetectedFood
 from app.services.nutrition import NutritionResolver, OpenFoodFactsClient, UsdaClient
@@ -396,4 +397,92 @@ async def test_a_stored_row_that_went_bad_does_not_reach_the_user(
     resolver = _resolver(db_session, nutrition_transport())
     item = await resolver.resolve(_detected("mystery powder", ["mystery powder"]))
 
+    assert item.matched is None
+
+
+async def test_broadening_a_pizza_query_keeps_the_known_cheese(db_session: AsyncSession) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "foods/search" not in request.url.path:
+            return httpx.Response(200, json={"products": []})
+        if request.url.params.get("query") != "pizza":
+            return httpx.Response(200, json={"foods": []})
+        wrong = usda_food("Pizza, no cheese, thin crust", 200.0)["foods"][0]
+        right = usda_food("Pizza, cheese, thin crust", 250.0, fdc_id=42)["foods"][0]
+        return httpx.Response(200, json={"foods": [wrong] * 6 + [right]})
+
+    item = await _resolver(db_session, httpx.MockTransport(handler)).resolve(
+        _detected("cheese pizza", ["pizza cheese thin crust", "pizza"], grams=200)
+    )
+
+    assert item.matched is not None
+    assert item.matched.source_ref == "42"
+    assert item.nutrition.calories == 500
+    assert item.is_rough is True
+    assert all("no cheese" not in m.name for m in item.alternatives)
+
+
+async def test_a_whole_pizza_cannot_fall_back_to_its_ingredients(db_session: AsyncSession) -> None:
+    db_session.add(Food(name="cheese", source="seed", kcal_per_100g=400))
+    await db_session.flush()
+    item = await _resolver(
+        db_session, nutrition_transport(off_search=_off_products("Pizza sauce", 80))
+    ).resolve(_detected("cheese pizza", ["pizza cheese", "cheese"]))
+
+    assert item.matched is None
+    assert item.nutrition.calories == 0
+
+
+async def test_old_pizza_writebacks_are_refetched_with_the_source_name(
+    db_session: AsyncSession,
+) -> None:
+    # Legacy rows keep only the query alias, which conceals a cheese-free source.
+    db_session.add(Food(name="pizza cheese", source="usda_fdc", kcal_per_100g=200))
+    await db_session.flush()
+    resolver = _resolver(
+        db_session,
+        nutrition_transport(usda=usda_food("Pizza, cheese, thin crust", 250, fdc_id=42)),
+    )
+    item = await resolver.resolve(_detected("cheese pizza", ["pizza cheese"]))
+
+    assert item.matched is not None
+    assert item.matched.source_ref == "42"
+    assert item.matched.name == "Pizza, cheese, thin crust"
+    stored = await db_session.scalar(select(Food).where(Food.name == "pizza cheese"))
+    assert stored.raw_payload["source_name"] == "Pizza, cheese, thin crust"
+
+    # A second lookup exercises the cached source identity without any upstream.
+    again = await _resolver(db_session, nutrition_transport()).resolve(
+        _detected("cheese pizza", ["pizza cheese"])
+    )
+    assert again.matched is not None
+    assert again.matched.name == item.matched.name
+    assert again.matched.source_ref == "42"
+
+
+@pytest.mark.parametrize("source", ["cached", "barcode", "off"])
+async def test_every_name_lookup_rejects_a_contradictory_pizza(
+    db_session: AsyncSession, source: str
+) -> None:
+    if source == "cached":
+        db_session.add(
+            Food(
+                name="pizza",
+                source="usda_fdc",
+                kcal_per_100g=200,
+                raw_payload={"source_name": "Pizza, no cheese, thick crust"},
+            )
+        )
+    if source == "barcode":
+        db_session.add(
+            BarcodeProduct(
+                upc="111", name="Pizza, no cheese", source="open_food_facts", kcal_per_100g=200
+            )
+        )
+    await db_session.flush()
+    transport = nutrition_transport(
+        off_search=_off_products("Pizza, no cheese", 200) if source == "off" else None
+    )
+    item = await _resolver(db_session, transport).resolve(
+        _detected("cheese pizza", ["pizza", "pizza, no cheese"])
+    )
     assert item.matched is None

@@ -15,6 +15,26 @@ import re
 
 _TOKENS = re.compile(r"[a-z0-9]+")
 
+# Negation must survive the short-word tokenizer: "no cheese" is not cheese.
+_NEGATED = re.compile(r"\b(?:no|without)\s+([a-z]+)\b|\b([a-z]+)[ -]free\b")
+_PIZZA_PARTS = frozenset({"topping", "sauce", "dough", "base", "crust", "kit", "mix"})
+_PIZZA_VARIANTS = frozenset({"dessert", "mexican", "breakfast", "roll", "bagel", "pocket"})
+# Standard cheese pizza should beat an unrequested fruit or stuffed-crust recipe.
+_PIZZA_RECIPE_DETAILS = frozenset(
+    {
+        "fruit",
+        "vegetable",
+        "meat",
+        "pepperoni",
+        "sausage",
+        "white",
+        "stuffed",
+        "wheat",
+        "gluten",
+        "extra",
+    }
+)
+
 # Words that describe preparation or size rather than identity. They are common
 # in our search terms and common in descriptions, so counting them as evidence
 # would let almost anything through: "cooked" alone would make a bratwurst a
@@ -79,6 +99,45 @@ def content_tokens(text: str) -> set[str]:
     }
 
 
+def _negated_words(text: str) -> set[str]:
+    return {_singular(a or b) for a, b in _NEGATED.findall(text.lower())}
+
+
+def _pizza_form(text: str) -> set[str]:
+    """Distinguish a whole pizza from the component and snack rows USDA also indexes."""
+    head = re.split(r",|\bwith\b", text.lower(), maxsplit=1)[0]
+    words = content_tokens(head)
+    parts = words & _PIZZA_PARTS
+    # "Thin crust pizza" describes the whole dish; "pizza crust" names a part.
+    if re.search(r"\b(?:thin|thick|medium|regular|stuffed)[ -]crust\b", head):
+        parts.discard("crust")
+    parts.update(re.findall(r"\b(crust|topping|sauce|dough) only\b", text.lower()))
+    return parts | (content_tokens(text) & _PIZZA_VARIANTS)
+
+
+def is_compatible_food(identity: str, name: str) -> bool:
+    """Reject contradictory pizza recipes and components before ranking or cache reuse.
+
+    The resolver carries the original identity here even when its search term widens.
+    """
+    query = content_tokens(identity)
+    if "pizza" not in query:
+        return True
+    excluded = _negated_words(identity)
+    absent = _negated_words(name)
+    if absent & (query - excluded) or not excluded <= absent:
+        return False
+    return "pizza" in content_tokens(name) and _pizza_form(identity) == _pizza_form(name)
+
+
+def unrequested_pizza_details(identity: str, name: str) -> int:
+    """Prefer an ordinary recipe when the query did not ask for a specialty variant."""
+    query = content_tokens(identity)
+    if "pizza" not in query:
+        return 0
+    return len((content_tokens(name) & _PIZZA_RECIPE_DETAILS) - query)
+
+
 def is_relevant(term: str, name: str) -> bool:
     """Does this row plausibly answer the query at all?
 
@@ -86,6 +145,8 @@ def is_relevant(term: str, name: str) -> bool:
     quality — callers do that, and every free-text hit is flagged rough anyway —
     only to reject answers about a different food entirely.
     """
+    if not is_compatible_food(term, name):
+        return False
     query = content_tokens(term)
     if not query:
         return True

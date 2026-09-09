@@ -58,7 +58,7 @@ class Case:
     note: str = field(default="")
 
 
-CASES: list[Case] = [
+BASE_CASES: list[Case] = [
     # ---- the observed failures ----
     Case(
         "curry sauce",
@@ -149,6 +149,22 @@ CASES: list[Case] = [
     Case("rolled oats dry", ("oat",), (), (300, 420)),
     Case("salmon fillet cooked", ("salmon",), (), (110, 280)),
 ]
+
+
+# Captured with the app's GET request and page size, without replacing the
+# original baseline. Score the groups separately so new passes cannot hide a regression.
+DISH_CASES: list[Case] = [
+    Case("pizza", ("pizza",), ("dessert", "mexican", "roll", "topping", "sauce")),
+    Case("pizza cheese", ("pizza", "cheese"), ("no cheese", "fruit", "extra", "stuffed")),
+    Case(
+        "pizza cheese thin crust",
+        ("pizza", "cheese", "thin"),
+        ("no cheese", "fruit", "extra", "wheat", "gluten"),
+    ),
+    Case("pizza pepperoni", ("pizza", "pepperoni"), ("no cheese", "stuffed")),
+    Case("lasagna", ("lasagna",), ("unprepared",)),
+]
+CASES = [*BASE_CASES, *DISH_CASES]
 
 
 # ----------------------------------------------------------------------

@@ -22,7 +22,12 @@ from app.config import settings
 from app.models.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
 from app.services.nutrition.matches import kcal_from
-from app.services.nutrition.relevance import SUBSTITUTE_MARKERS, content_tokens
+from app.services.nutrition.relevance import (
+    SUBSTITUTE_MARKERS,
+    content_tokens,
+    is_compatible_food,
+    unrequested_pizza_details,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +81,9 @@ def _head(description: str) -> str:
     return description.split(",", 1)[0]
 
 
-def rank_foods(term: str, foods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def rank_foods(
+    term: str, foods: list[dict[str, Any]], *, identity: str | None = None
+) -> list[dict[str, Any]]:
     """Order raw FDC results by how well they answer ``term``, best first.
 
     Pure, and public so ``scripts/eval_matching`` can score it against recorded
@@ -95,6 +102,10 @@ def rank_foods(term: str, foods: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     for index, food in enumerate(foods):
         description = food.get("description") or ""
+        if not is_compatible_food(term, description):
+            continue
+        if identity is not None and not is_compatible_food(identity, description):
+            continue
         body = content_tokens(description)
         if query and not (query & body):
             continue
@@ -110,6 +121,9 @@ def rank_foods(term: str, foods: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     # query did not ask for one, so "meatless chicken" still
                     # finds what it means.
                     1 if (body & SUBSTITUTE_MARKERS) and not (query & SUBSTITUTE_MARKERS) else 0,
+                    # Word overlap otherwise promotes fruit or stuffed crust
+                    # over standard cheese pizza simply for a shorter name.
+                    unrequested_pizza_details(identity or term, description),
                     # How much of the *query* the row accounts for, anywhere in
                     # the description. This is the relevance measure, and it has
                     # to lead: "Sauce, cheese sauce mix" answers nothing of
@@ -180,7 +194,7 @@ def _nutrient_values(payload: dict[str, Any]) -> dict[int, float]:
             continue
         try:
             values[int(nutrient_id)] = float(amount)
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
     return values
 
@@ -305,7 +319,9 @@ class UsdaClient:
             ],
         )
 
-    async def search(self, term: str, *, limit: int = 5) -> list[NutritionMatch]:
+    async def search(
+        self, term: str, *, limit: int = 5, identity: str | None = None
+    ) -> list[NutritionMatch]:
         """Best matches for ``term``, most plausible first. Empty on any failure."""
         if not self.configured:
             # Not an error worth logging on every lookup — an unconfigured key is
@@ -343,6 +359,8 @@ class UsdaClient:
         if not isinstance(foods, list):
             return []
 
-        ranked = rank_foods(term, [f for f in foods if isinstance(f, dict)])
+        # Filter against the original food before trimming; otherwise five bad
+        # variants can hide a suitable sixth result on a broader search rung.
+        ranked = rank_foods(term, [f for f in foods if isinstance(f, dict)], identity=identity)
         matches = [m for m in (_to_match(f) for f in ranked) if m is not None]
         return matches[:limit]

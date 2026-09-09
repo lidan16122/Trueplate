@@ -7,6 +7,8 @@ real food, with real numbers, that happens not to be the one on the plate.
 
 from typing import Any
 
+import pytest
+
 from app.services.nutrition.relevance import content_tokens, is_relevant
 from app.services.nutrition.usda import rank_foods
 
@@ -156,8 +158,78 @@ class TestStemming:
         assert "glass" in content_tokens("glass of milk")
 
 
+class TestPreparedDishes:
+    def test_pizza_rules_do_not_reinterpret_other_food_names(self) -> None:
+        name = "Yogurt, Greek, nonfat"
+        assert top("fat-free greek yogurt", food(name)) == name
+
+    @pytest.mark.parametrize(
+        "wrong",
+        [
+            "Pizza, no cheese, thick crust",
+            "Pizza without cheese",
+            "Cheese-free pizza",
+            "Topping from cheese pizza",
+            "Pizza cheese topping",
+            "Pizza crust",
+            "Pizza sauce",
+            "Pizza rolls",
+            "Dessert pizza",
+            "Mexican pizza",
+            "Pizza, rolls",
+        ],
+    )
+    def test_cheese_pizza_does_not_resolve_to_a_different_food(self, wrong: str) -> None:
+        assert rank_foods("pizza cheese", [food(wrong)]) == []
+
+    @pytest.mark.parametrize(
+        ("query", "description"),
+        [
+            ("pizza cheese", "Pizza, cheese, from restaurant, thin crust"),
+            ("pizza cheese", "Thin crust cheese pizza"),
+            ("pizza rolls", "Pizza rolls"),
+            ("pizza crust", "Pizza crust, thin"),
+            ("pizza sauce", "Sauce, pizza"),
+            ("pizza topping", "Topping from cheese pizza"),
+            ("dessert pizza", "Dessert pizza"),
+            ("pizza, dessert", "Dessert pizza"),
+            ("pizza no cheese", "Pizza, no cheese, thick crust"),
+        ],
+    )
+    def test_an_explicit_pizza_variant_remains_searchable(
+        self, query: str, description: str
+    ) -> None:
+        assert top(query, food(description)) == description
+
+    def test_a_cheese_free_query_does_not_accept_regular_cheese_pizza(self) -> None:
+        assert rank_foods("pizza no cheese", [food("Pizza, cheese, thin crust")]) == []
+
+    def test_standard_cheese_pizza_beats_unrequested_recipe_variants(self) -> None:
+        assert (
+            top(
+                "pizza cheese thin crust",
+                food("Pizza, cheese, with fruit, thin crust"),
+                food("Pizza, extra cheese, thin crust"),
+                food("Pizza, cheese, whole wheat thin crust"),
+                food("Pizza, cheese, from frozen, thin crust"),
+            )
+            == "Pizza, cheese, from frozen, thin crust"
+        )
+
+    def test_an_explicit_stuffed_crust_request_keeps_its_recipe(self) -> None:
+        assert (
+            top(
+                "pizza cheese stuffed crust",
+                food("Pizza, cheese, thin crust"),
+                food("Pizza, cheese, stuffed crust"),
+            )
+            == "Pizza, cheese, stuffed crust"
+        )
+
+
 class TestAgainstRecordedResponses:
-    def test_the_eval_set_does_not_regress(self):
+    @pytest.mark.parametrize(("group", "minimum"), [("baseline", 29), ("dishes", 5)])
+    def test_the_eval_set_does_not_regress(self, group: str, minimum: int):
         """The eval is a script so it can be iterated on; this keeps its result
         from drifting unnoticed between times anyone remembers to run it.
 
@@ -169,11 +241,12 @@ class TestAgainstRecordedResponses:
         """
         import json
 
-        from scripts.eval_matching import CASES, FIXTURE, _kcal, judge
+        from scripts.eval_matching import BASE_CASES, DISH_CASES, FIXTURE, _kcal, judge
 
         recorded = json.loads(FIXTURE.read_text(encoding="utf-8"))
         passed = 0
-        for case in CASES:
+        cases = BASE_CASES if group == "baseline" else DISH_CASES
+        for case in cases:
             foods = recorded.get(case.term)
             assert foods is not None, f"{case.term!r} is not recorded; run --refresh"
             ranked = rank_foods(case.term, foods)
@@ -181,4 +254,4 @@ class TestAgainstRecordedResponses:
             if judge(case, best) is None:
                 passed += 1
 
-        assert passed >= 29, f"ranking regressed to {passed}/{len(CASES)}"
+        assert passed >= minimum, f"{group} ranking regressed to {passed}/{len(cases)}"

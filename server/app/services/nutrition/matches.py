@@ -55,9 +55,10 @@ def is_plausible(match: NutritionMatch) -> bool:
 
 def from_food_row(row: Food) -> NutritionMatch:
     """A curated or previously fetched ``foods`` row."""
+    source_name = (row.raw_payload or {}).get("source_name")
     return NutritionMatch(
         food_id=str(row.id),
-        name=row.name,
+        name=source_name if isinstance(source_name, str) and source_name.strip() else row.name,
         brand=row.brand,
         source=row.source,
         source_ref=row.source_ref,

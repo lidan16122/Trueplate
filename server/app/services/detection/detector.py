@@ -28,7 +28,7 @@ from typing import Any
 import anthropic
 from anthropic import AsyncAnthropic
 from fastapi.concurrency import run_in_threadpool
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.config import settings
 from app.models.enums import DetectionMethod, MealType
@@ -38,6 +38,7 @@ from app.schemas.detection import (
     FoodDetectionResult,
     NutritionFacts,
     ResolvedFoodItem,
+    anthropic_portion_repair_tool,
     anthropic_tool_schema,
 )
 from app.services.detection import imaging
@@ -90,9 +91,7 @@ class _Spend:
     @property
     def usd(self) -> float:
         billable_input = (
-            self.input
-            + self.cache_read * _CACHE_READ_RATE
-            + self.cache_write * _CACHE_WRITE_RATE
+            self.input + self.cache_read * _CACHE_READ_RATE + self.cache_write * _CACHE_WRITE_RATE
         )
         return billable_input * _USD_PER_INPUT_TOKEN + self.output * _USD_PER_OUTPUT_TOKEN
 
@@ -138,35 +137,45 @@ serving size, not the numbers printed on it.
 as the meal.
 - `not_food` — anything else. Return an empty `foods` list and say what you saw in `notes`.
 
-## Report every food
+## Identify the foods as served
 
-Return one entry per distinct food. "Chicken with rice and broccoli" is three entries; \
-"toast with avocado and a boiled egg" is three entries. Never drop an item because it is \
-small, a side, a garnish, a spread, a sauce or a drink, and never fold two foods into a \
-single entry — a missing item is a missing meal to the person logging it.
+Return one entry per loggable food: a recognizable prepared dish or an independently \
+served food. Keep a prepared dish whole even when its ingredients are visible. Pizza, \
+lasagna, a burger, a sandwich, and pasta with incorporated meat sauce are complete foods. \
+Their normal crust, cheese, sauce, filling and toppings are already included in the dish; \
+do not list those ingredients again or guess separate masses for them.
 
-Fill the tool in the order its fields are listed: name every food you can see in \
-`components`, one short phrase each, then give `foods` exactly one entry per name. The \
-server compares the two lists and hands the reply straight back to you naming what is \
-missing, so a short list costs a whole extra round trip and gets caught anyway.
+Keep independently served foods separate. Rice beside chicken is two entries; pasta \
+beside a beef portion is two entries; chicken, rice and broccoli is three. Pizza beside \
+a salad and a dipping sauce is pizza, salad and dip. Include separate sides, drinks and \
+condiments even when small. Ingredients laid out before assembly are separate foods, and \
+an explicit user request to log ingredients separately should be respected.
 
-`components` is not a summary you write afterwards. Write it first, from the image, and \
-then work down it.
+Group repeated portions of the same food into one entry with their combined edible mass: \
+two slices of the same pizza are one pizza entry, household_quantity 2, household_unit \
+"slice". A cheese slice and a pepperoni slice are different foods and need two entries. \
+Different preparations, such as roast potatoes and mash, also remain separate.
 
-A dish named as a combination ("toast with X and Y") is still its components. Silently \
-reporting one of three is the most damaging mistake you can make here, because the user \
-sees a plausible answer and has no idea anything is missing.
+First fill `components` with the loggable foods as served, one short name each; then give \
+`foods` exactly one entry per name. For two cheese-pizza slices use ["cheese pizza"], not \
+an inventory of crust, cheese and sauce. For rice beside chicken use ["rice", "chicken"]. \
+Before recording, check the image for any separately served food you missed. If a dish \
+cannot be identified, report what you can identify and describe the uncertainty in notes; \
+do not invent a hidden recipe.
 
 ## Search terms are a ladder
 
-`search_terms` is how a food gets looked up, and it is **not** a description of the plate. \
-The database indexes foods, not meals. Name the food and how it was cooked; leave out the \
-dish it was part of, the sauce it was sitting in, and filler like "only", "pieces" or \
-"slices".
+`search_terms` is how each loggable food gets looked up. The database includes both \
+ingredients and complete prepared dishes. Keep the identity of the food being logged on \
+every rung; leave counts and filler like "pieces" or "slices" in the portion fields.
 
-- "chicken drumstick curry meat only" → "chicken drumstick cooked"
-- "potato cooked in curry" → "potato boiled"
-- "onion masala gravy" → "curry sauce"
+- Two thin-crust cheese-pizza slices → ["pizza cheese thin crust", "pizza cheese", "pizza"]
+- A recognizable beef lasagna → ["lasagna with meat", "lasagna"]
+- A separately served chicken drumstick → ["chicken drumstick cooked", "chicken cooked"]
+
+Only include a crust style, topping, brand or preparation when supported by the image or \
+the user's description. A pizza lookup must stay pizza; never broaden it to cheese, sauce \
+or bread. Preserve explicit exclusions such as "no cheese" on every rung.
 
 Go most specific first, each rung broader than the last: \
 ["basmati rice steamed", "white rice cooked", "rice"]. The server walks down until a \
@@ -181,34 +190,13 @@ None of this costs you any detail: `label` is where the food's real description 
 "pulled chicken in masala" — and `label` is what the user actually reads. Only the lookup \
 terms need to be plain.
 
-## One entry per component you can see
-
-A plate is a list of parts, not a dish name. Return one entry for everything you can see and \
-point at, each with its own grams: the rice, each piece of meat, each vegetable, the sauce. \
-"Chicken curry with rice" is not one entry and it is not two — it is the rice, the chicken, \
-whatever vegetables are in it, and the gravy, separately. "Mum's lasagna" is pasta, beef, \
-ricotta, tomato and cheese.
-
-**The same food in two forms is two entries.** A bone-in leg and the pulled pieces beside it \
-are separately visible and separately weighable, so they are separate lines — as are roast \
-potatoes and mash on one plate.
-
-**A sauce, gravy, dressing or masala is a component, not a seasoning.** It carries most of \
-the oil in a dish and is usually the largest single source of error in the whole reading, so \
-give it its own entry and its own mass.
-
-One entry is right only when the food arrives as a single indivisible thing: an apple, a \
-canned drink, a packaged bar, a sandwich or burger whose parts you cannot see separately. Do \
-not ask yourself whether a nutrition database might hold the dish as one row — that is the \
-server's problem, and answering it here is what makes a whole meal come back as one line.
-
 ## Portions
 
 Estimate the *edible* mass: not packaging, not bone, not the plate. Record what you based it \
 on in `portion_reasoning`.
 
 Where a food has a natural household measure, give `household_quantity` and \
-`household_unit` as well ("1.5" + "cups", "2" + "slices"). Keep them consistent with your \
+`household_unit` as well (1.5 + "cup", 2 + "slice"). Keep them consistent with your \
 gram estimate — the ratio between the two is what later lets someone correct the portion by \
 editing the familiar number. Leave both out when a food has no natural unit; a smear of \
 sauce is not "1" of anything.
@@ -243,7 +231,12 @@ you learn to write a better `label` and better `search_terms` instead.\
 # `FoodDetectionResult`), and a reorder changes the answer while leaving the
 # prompt byte-identical.
 PROMPT_FINGERPRINT = hashlib.sha256(
-    (SYSTEM_PROMPT + json.dumps(anthropic_tool_schema(), sort_keys=True)).encode("utf-8")
+    (
+        SYSTEM_PROMPT
+        + json.dumps(
+            [anthropic_tool_schema(), anthropic_portion_repair_tool(["food"])[1]], sort_keys=True
+        )
+    ).encode("utf-8")
 ).hexdigest()[:16]
 
 
@@ -345,8 +338,9 @@ class DetectionService:
                 {
                     "type": "text",
                     "text": (
-                        "Analyse each portion of food in this photo. Name every component "
-                        "you can see, then give the weight of each one."
+                        "Identify the foods as served in this photo. Keep recognizable "
+                        "prepared dishes whole, include separately served foods, and "
+                        "estimate the combined edible weight of each food."
                     ),
                 }
             )
@@ -406,6 +400,9 @@ class DetectionService:
         # — and a clean detection still costs a single turn. A fault already raised
         # is accepted as final: the model has had its say on that one.
         raised: set[str] = set()
+        record_name = TOOL_NAME
+        repair_model: type[BaseModel] | None = None
+        repair_inventory: FoodDetectionResult | None = None
 
         for _ in range(_MAX_TURNS):
             try:
@@ -472,7 +469,7 @@ class DetectionService:
                 continue
 
             tool_calls = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
-            final = next((b for b in tool_calls if b.name == TOOL_NAME), None)
+            final = next((b for b in tool_calls if b.name == record_name), None)
             if final is not None:
                 # One line per detection, at INFO. Output tokens dominate the
                 # bill at 5x the input rate, so the split matters more than the
@@ -496,7 +493,26 @@ class DetectionService:
                     spend.usd,
                 )
                 try:
-                    result, dropped = self._parse_result(final.input)
+                    payload = final.input
+                    if repair_model is not None and repair_inventory is not None:
+                        try:
+                            repair_model.model_validate(payload)
+                        except ValidationError as exc:
+                            # Mass bounds still run locally, so a bad mass gets
+                            # the usual salvage/retry path. The fixed envelope must hold.
+                            if any(
+                                not e["loc"] or e["loc"][-1] != "estimated_grams"
+                                for e in exc.errors()
+                            ):
+                                raise
+                        payload = {
+                            **repair_inventory.model_dump(),
+                            "foods": [
+                                payload[f"food_{index}"]
+                                for index in range(1, len(repair_inventory.components) + 1)
+                            ],
+                        }
+                    result, dropped = self._parse_result(payload)
                 except ValidationError as exc:
                     # The envelope itself is unusable, not just one item. A 503
                     # is the honest answer — the client already retries it,
@@ -514,6 +530,15 @@ class DetectionService:
                 if complaint is not None and complaint[0] not in raised:
                     kind, message = complaint
                     raised.add(kind)
+                    if kind == "count" and len(result.components) > len(result.foods):
+                        repair_inventory = result
+                        repair_model, repair_tool = anthropic_portion_repair_tool(result.components)
+                        tools = [repair_tool, *tools[1:]]
+                        record_name = repair_tool["name"]
+                        message += (
+                            " Use complete_food_portions now; every named food has its own "
+                            "required portion field. Fill all of them in one call."
+                        )
                     logger.info("Re-asking (%s): %s", kind, message)
                     messages.append({"role": "assistant", "content": response.content})
                     # The complaint travels as a `tool_result`, not as a plain
@@ -552,16 +577,14 @@ class DetectionService:
             messages.append(
                 {
                     "role": "user",
-                    "content": f"Record what you found using the {TOOL_NAME} tool now.",
+                    "content": f"Record what you found using the {record_name} tool now.",
                 }
             )
 
         raise DetectionUnavailable("Detection did not converge on a result.")
 
     @staticmethod
-    def _self_contradiction(
-        result: FoodDetectionResult, *, dropped: int
-    ) -> tuple[str, str] | None:
+    def _self_contradiction(result: FoodDetectionResult, *, dropped: int) -> tuple[str, str] | None:
         """``(kind, message)`` when the reply does not hold together, else None.
 
         Every case here is answerable by looking again at what was already
@@ -614,7 +637,9 @@ class DetectionService:
                 f"You named {len(result.components)} component(s) — {named} — but `foods` "
                 f"holds {len(result.foods)} entry/entries"
                 + (f", missing: {', '.join(missing)}" if missing else "")
-                + ". Return one entry per name, each with its own grams.",
+                + ". Return one entry per loggable food, each with its own grams. "
+                "Keep prepared dishes whole and include separately served foods; "
+                "make the components inventory agree with those entries.",
             )
 
         return None
@@ -718,9 +743,7 @@ class DetectionService:
         if result.input_kind == "not_food":
             raise NotFoodError(result.notes or "That does not look like food.")
         if not result.foods:
-            raise NothingDetected(
-                result.notes or "Nothing recognisable as food was found in that."
-            )
+            raise NothingDetected(result.notes or "Nothing recognisable as food was found in that.")
 
         items: list[ResolvedFoodItem] = []
         for detected in result.foods:
@@ -746,33 +769,14 @@ class DetectionService:
             totals=totals,
             image_hash=image_hash,
             cached=False,
-            is_provisional=self._looks_under_reported(result, kind),
+            is_provisional=self._looks_under_reported(result),
             notes=result.notes,
         )
 
     @staticmethod
-    def _looks_under_reported(result: FoodDetectionResult, kind: DetectionMethod) -> bool:
-        """Whether this reading is too doubtful to freeze in the cache.
+    def _looks_under_reported(result: FoodDetectionResult) -> bool:
+        """Keep an inconsistent inventory out of the cache.
 
-        Two shapes, and the second is the one that costs a user their meal.
-
-        A list still shorter than the names it wrote, after every re-ask those
-        faults were owed, is the model telling us outright that it did not report
-        everything it saw.
-
-        A *photographed* meal returning exactly one food is the failure this
-        exists for: a five-component plate came back as 280 g of rice. There is
-        not always a signal inside the reply to catch that — only the prior that
-        a plate of food is rarely one thing.
-
-        Restricted to photos, and to `food`: a nutrition label or a menu
-        legitimately resolves to a single product, and the typed path is the
-        user telling us what they ate rather than us guessing.
+        A single complete food, including a prepared dish, is a valid reading.
         """
-        if len(result.components) != len(result.foods):
-            return True
-        return (
-            kind == DetectionMethod.PHOTO
-            and result.input_kind == "food"
-            and len(result.foods) == 1
-        )
+        return len(result.components) != len(result.foods)
