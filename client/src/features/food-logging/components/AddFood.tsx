@@ -3,20 +3,13 @@ import { useAddFood } from "../hooks/useAddFood";
 import { ErrorNote } from "@/components/ErrorNote";
 import { formatDayLabel } from "@/utils/format";
 
-/**
- * Two genuinely different screens, not one screen that reflows.
- *
- * On a phone the camera *is* the feature, so the whole viewport is a dark
- * viewfinder with a shutter button. On a desktop there is no camera worth
- * using, so the same three inputs are presented as a drop zone, a text box and
- * a barcode field. Sharing markup between those would mean a compromise that
- * suits neither; sharing the handlers below costs nothing.
- */
+/** Mobile camera and gallery controls share the desktop upload flow so every source stages one photo for review. */
 export function AddFood() {
   const {
     navigate,
     date,
-    fileRef,
+    cameraFileRef,
+    galleryFileRef,
     barcodeFileRef,
     mode,
     setMode,
@@ -69,7 +62,8 @@ export function AddFood() {
                     </span>
                     <button
                       onClick={clearPhoto}
-                      className="flex-none text-label text-on-dark underline-offset-2 transition-colors hover:text-white hover:underline"
+                      disabled={busy !== null}
+                      className="flex-none text-label text-on-dark underline-offset-2 transition-colors hover:text-white hover:underline disabled:opacity-40"
                     >
                       Remove
                     </button>
@@ -142,10 +136,10 @@ export function AddFood() {
             ) : (
               <>
                 <div className="font-mono text-label tracking-[0.08em] text-on-dark-dim">
-                  {aiBlocked ? "NO DETECTIONS LEFT" : "CAMERA VIEWFINDER"}
+                  {aiBlocked ? "NO DETECTIONS LEFT" : "ADD A FOOD PHOTO"}
                 </div>
                 <div className="max-w-[260px] text-center text-caption leading-relaxed text-on-dark-faint">
-                  {aiBlocked ? capNote : "Point at the plate"}
+                  {aiBlocked ? capNote : "Take a photo of your plate or choose one from your gallery"}
                 </div>
               </>
             )}
@@ -181,7 +175,7 @@ export function AddFood() {
               time the screen is a viewfinder, which is most of the time.
             */}
             <button
-              onClick={() => (photoFile ? void submitPhoto() : fileRef.current?.click())}
+              onClick={() => (photoFile ? void submitPhoto() : cameraFileRef.current?.click())}
               disabled={aiBlocked || busy !== null}
               className="flex flex-col items-center gap-[7px] disabled:opacity-40"
               aria-label={photoFile ? "Analyse this photo" : "Take a photo"}
@@ -213,15 +207,26 @@ export function AddFood() {
             </button>
           </div>
 
-          {photoFile && (
+          <div className="flex items-center justify-center gap-3">
+            {photoFile && (
+              <button
+                type="button"
+                onClick={() => cameraFileRef.current?.click()}
+                disabled={aiBlocked || busy !== null}
+                className="h-12 flex-1 rounded-card border border-line-dark text-caption text-on-dark transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-soft disabled:opacity-40"
+              >
+                Retake
+              </button>
+            )}
             <button
-              onClick={() => fileRef.current?.click()}
+              type="button"
+              onClick={() => galleryFileRef.current?.click()}
               disabled={aiBlocked || busy !== null}
-              className="h-9 w-full text-label text-on-dark-dim transition-colors hover:text-white disabled:opacity-40"
+              className="h-12 flex-1 rounded-card border border-line-dark text-caption text-on-dark transition-colors hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-soft disabled:opacity-40"
             >
-              Retake
+              {photoFile ? "Choose another photo" : "Choose from gallery"}
             </button>
-          )}
+          </div>
 
           <button
             onClick={() => navigate(-1)}
@@ -254,7 +259,7 @@ export function AddFood() {
           */}
           <div className="flex min-h-0 flex-[1.4] flex-col gap-3">
             <button
-              onClick={() => fileRef.current?.click()}
+              onClick={() => galleryFileRef.current?.click()}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragging(true);
@@ -382,22 +387,31 @@ export function AddFood() {
         </div>
       </div>
 
-      {/*
-        `capture="environment"` opens the rear camera directly on a phone and
-        falls back to a normal file picker on desktop. A plain file input rather
-        than getUserMedia: no permission prompt to manage, no video element to
-        keep alive, and the OS camera UI is better than anything reimplemented.
-      */}
+      {/* Separate inputs keep the camera shortcut while allowing existing photos in the gallery picker. */}
       <input
-        ref={fileRef}
+        ref={cameraFileRef}
         type="file"
         accept="image/*"
         capture="environment"
+        multiple={false}
+        disabled={aiBlocked || busy !== null}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          // Stage only. Detection costs real money and takes seconds, so it
-          // waits for someone to ask for it.
+          if (file) stagePhoto(file);
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={galleryFileRef}
+        type="file"
+        accept="image/*"
+        multiple={false}
+        disabled={aiBlocked || busy !== null}
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          // Replaces the staged photo; detection waits for an explicit Analyse.
           if (file) stagePhoto(file);
           e.target.value = "";
         }}
