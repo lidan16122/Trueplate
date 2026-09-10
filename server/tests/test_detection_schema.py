@@ -9,6 +9,7 @@ from app.schemas.detection import (
     _UNSUPPORTED_SCHEMA_KEYS,
     DetectedFood,
     FoodDetectionResult,
+    anthropic_portion_repair_tool,
     anthropic_tool_schema,
 )
 
@@ -55,6 +56,27 @@ class TestModelCannotReturnNutrition:
             if any(word in name.lower().split("_") for word in NUTRITION_WORDS)
         }
         assert offending == set(), f"model-facing schema exposes nutrition fields: {offending}"
+
+    def test_a_repair_requires_every_named_food_and_still_forbids_nutrition(self):
+        model, tool = anthropic_portion_repair_tool(["cheese pizza", "pepperoni pizza"])
+        schema = tool["input_schema"]
+        assert schema["required"] == ["food_1", "food_2"]
+        assert schema["additionalProperties"] is False
+        assert not (_all_property_names(schema) & NUTRITION_WORDS)
+        portion = {
+            "label": "cheese pizza",
+            "estimated_grams": 100,
+            "confidence": 0.9,
+            "search_terms": ["pizza cheese"],
+        }
+        payload = {"food_1": portion, "food_2": {**portion, "label": "pepperoni pizza"}}
+        assert len(model.model_validate(payload).model_dump()) == 2
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            model.model_validate({**payload, "calories": 500})
+        with pytest.raises(ValidationError, match="food_2"):
+            model.model_validate({"food_1": portion})
+        with pytest.raises(ValidationError, match="pepperoni pizza"):
+            model.model_validate({**payload, "food_2": portion})
 
     def test_unknown_fields_are_rejected(self):
         # Without this, a model that volunteers "calories": 450 would sail

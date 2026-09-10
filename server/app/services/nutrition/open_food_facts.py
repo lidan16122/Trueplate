@@ -18,7 +18,7 @@ from app.config import settings
 from app.models.enums import NutritionSource
 from app.schemas.detection import NutritionMatch
 from app.services.nutrition.matches import kcal_from
-from app.services.nutrition.relevance import is_relevant
+from app.services.nutrition.relevance import is_compatible_food, is_relevant
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ def _number(nutriments: dict[str, Any], key: str) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -140,7 +140,9 @@ class OpenFoodFactsClient:
             raw_payload=product,
         )
 
-    async def search(self, term: str, *, limit: int = 5) -> list[NutritionMatch]:
+    async def search(
+        self, term: str, *, limit: int = 5, identity: str | None = None
+    ) -> list[NutritionMatch]:
         """Best packaged-goods matches for ``term``. Empty on any failure."""
         try:
             response = await self._client.get(
@@ -168,6 +170,8 @@ class OpenFoodFactsClient:
         matches = [
             m
             for m in (_to_match(p) for p in products if isinstance(p, dict))
-            if m is not None and is_relevant(term, m.name)
+            if m is not None
+            and is_relevant(term, m.name)
+            and (identity is None or is_compatible_food(identity, m.name))
         ]
         return matches[:limit]

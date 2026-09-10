@@ -1,0 +1,57 @@
+{
+  "provenance": "Observed USDA public API POST /fdc/v1/foods/search on 2026-09-09 with DEMO_KEY; dataType Survey (FNDDS). Reduced candidate discovery only, no nutrient values. Original ordering retained. These query settings differ from the app's GET search, which requests 25 unfiltered candidates.",
+  "queries": [
+    {
+      "query": "pizza",
+      "pageSize": 10,
+      "foods": [
+        {"fdcId":2708008,"description":"Dessert pizza","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708507,"description":"Mexican pizza","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708686,"description":"Pizza rolls","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708699,"description":"Breakfast pizza with egg","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708675,"description":"Pizza, no cheese, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2705787,"description":"Topping from cheese pizza","dataType":"Survey (FNDDS)"},
+        {"fdcId":2705788,"description":"Topping from vegetable pizza","dataType":"Survey (FNDDS)"},
+        {"fdcId":2705789,"description":"Topping from meat pizza","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708642,"description":"Pizza with pepperoni, stuffed crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708618,"description":"Pizza, cheese, stuffed crust","dataType":"Survey (FNDDS)"}
+      ]
+    },
+    {
+      "query": "pizza cheese",
+      "pageSize": 30,
+      "foods": [
+        {"fdcId":2705787,"description":"Topping from cheese pizza","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708675,"description":"Pizza, no cheese, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708618,"description":"Pizza, cheese, stuffed crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708674,"description":"Pizza, no cheese, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708623,"description":"Pizza, extra cheese, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708677,"description":"White pizza, cheese, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708634,"description":"Pizza, cheese, with fruit, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708633,"description":"Pizza, cheese, with fruit, medium crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708632,"description":"Pizza, cheese, with fruit, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708622,"description":"Pizza, extra cheese, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708676,"description":"White pizza, cheese, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708679,"description":"White pizza, cheese, with vegetables, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708613,"description":"Pizza, cheese, from frozen, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708694,"description":"Pizza, cheese, gluten-free thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708631,"description":"Pizza with cheese and extra vegetables, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708688,"description":"Pizza, cheese, whole wheat thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708681,"description":"White pizza, cheese, with meat, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708612,"description":"Pizza, cheese, from frozen, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708630,"description":"Pizza with cheese and extra vegetables, medium crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708629,"description":"Pizza with cheese and extra vegetables, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708693,"description":"Pizza, cheese, gluten-free thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708687,"description":"Pizza, cheese, whole wheat thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708680,"description":"White pizza, cheese, with meat, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708678,"description":"White pizza, cheese, with vegetables, thin crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708698,"description":"Pizza, cheese and vegetables, gluten-free thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708625,"description":"Pizza, cheese with vegetables, from frozen, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708692,"description":"Pizza, cheese and vegetables, whole wheat thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708621,"description":"Pizza, cheese, from school lunch, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708683,"description":"White pizza, cheese, with meat and vegetables, thick crust","dataType":"Survey (FNDDS)"},
+        {"fdcId":2708624,"description":"Pizza, cheese, with vegetables, from frozen, thin crust","dataType":"Survey (FNDDS)"}
+      ]
+    }
+  ]
+}
