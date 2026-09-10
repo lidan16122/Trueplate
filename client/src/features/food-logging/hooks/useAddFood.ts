@@ -16,7 +16,8 @@ export function useAddFood() {
   const [params] = useSearchParams();
   const date = params.get("date") ?? today();
 
-  const fileRef = useRef<HTMLInputElement>(null);
+  const cameraFileRef = useRef<HTMLInputElement>(null);
+  const galleryFileRef = useRef<HTMLInputElement>(null);
   const barcodeFileRef = useRef<HTMLInputElement>(null);
   const [mode, setMode] = useState<Mode>("idle");
   const [description, setDescription] = useState("");
@@ -85,16 +86,19 @@ export function useAddFood() {
   /** Show the photo and wait. No network call until the user asks for one. */
   const stagePhoto = useCallback(
     (file: File) => {
-      // Guards the drop handler and the hidden file input at once — the two
-      // ways a photo gets staged that a disabled button does not cover.
-      if (aiBlocked) return;
+      // File pickers and drops share one photo slot, including while a request
+      // is pending so its preview cannot be replaced by a later selection.
+      if (aiBlocked || busy !== null) return;
       setError(null);
       setPhotoFile(file);
+      // A photo selected from barcode mode needs its preview visible; text mode
+      // stays open so an existing note can still be edited alongside the photo.
+      setMode((current) => (current === "barcode" ? "idle" : current));
       // Replacing an earlier pick needs nothing extra: the effect above releases
       // the previous object URL when this value changes.
       setPreview(URL.createObjectURL(file));
     },
-    [aiBlocked],
+    [aiBlocked, busy],
   );
 
   const clearPhoto = useCallback(() => {
@@ -159,7 +163,8 @@ export function useAddFood() {
   return {
     navigate,
     date,
-    fileRef,
+    cameraFileRef,
+    galleryFileRef,
     barcodeFileRef,
     mode,
     setMode,
