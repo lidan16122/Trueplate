@@ -7,18 +7,10 @@ interface Props {
   days: number;
   summaries: DaySummary[];
   onSelect: (iso: string) => void;
-  onShiftWeek?: (direction: -1 | 1) => void;
-  showPaging?: boolean;
 }
 
-export function DateStrip({
-  selected,
-  days,
-  summaries,
-  onSelect,
-  onShiftWeek,
-  showPaging = false,
-}: Props) {
+/** Both layouts keep week navigation beside the days so history always has a way forward. */
+export function DateStrip({ selected, days, summaries, onSelect }: Props) {
   const todayISO = today();
   const hasEntries = new Map(summaries.map((s) => [s.log_date, s.has_entries]));
 
@@ -28,18 +20,19 @@ export function DateStrip({
 
   // There is nothing to log in the future, so forward paging stops at today.
   const canGoForward = selected < todayISO;
+  const nextWeek = shiftDays(selected, 7);
+  const nextDate = nextWeek > todayISO ? todayISO : nextWeek;
 
   return (
     <div className="flex items-center gap-1.5">
-      {showPaging && (
-        <button
-          onClick={() => onShiftWeek?.(-1)}
-          className="flex h-[66px] w-7 flex-none items-center justify-center rounded-sm text-lead text-faint transition-colors hover:bg-wash hover:text-ink"
-          aria-label="Previous week"
-        >
-          ‹
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => onSelect(shiftDays(selected, -7))}
+        className="flex h-[66px] w-7 flex-none items-center justify-center rounded-sm bg-surface text-input text-muted transition-colors hover:bg-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        aria-label="Previous week"
+      >
+        ‹
+      </button>
 
       {dates.map((iso) => {
         const isSelected = iso === selected;
@@ -47,10 +40,11 @@ export function DateStrip({
 
         return (
           <button
+            type="button"
             key={iso}
             onClick={() => onSelect(iso)}
             aria-current={isSelected ? "date" : undefined}
-            className={`flex h-[66px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-card border transition-colors ${
+            className={`flex h-[66px] min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-card border transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
               isSelected
                 ? "border-ink bg-ink"
                 : "border-line-soft bg-surface hover:border-line"
@@ -83,16 +77,15 @@ export function DateStrip({
         );
       })}
 
-      {showPaging && (
-        <button
-          onClick={() => onShiftWeek?.(1)}
-          disabled={!canGoForward}
-          className="flex h-[66px] w-7 flex-none items-center justify-center rounded-sm text-lead text-faint transition-colors hover:bg-wash hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent"
-          aria-label="Next week"
-        >
-          ›
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => onSelect(nextDate)}
+        disabled={!canGoForward}
+        className="flex h-[66px] w-7 flex-none items-center justify-center rounded-sm bg-surface text-input text-muted transition-colors hover:bg-wash hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-default disabled:opacity-30 disabled:hover:bg-surface"
+        aria-label="Next week"
+      >
+        ›
+      </button>
     </div>
   );
 }
