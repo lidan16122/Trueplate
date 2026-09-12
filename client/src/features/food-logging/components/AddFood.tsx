@@ -257,7 +257,7 @@ export function AddFood() {
             itself a <button>, and a button inside a button is invalid markup
             that browsers resolve by dropping one of them.
           */}
-          <div className="flex min-h-0 flex-[1.4] flex-col gap-3">
+          <div className="flex min-h-0 min-w-0 flex-[1.4] flex-col gap-3">
             <button
               onClick={() => galleryFileRef.current?.click()}
               onDragOver={(e) => {
@@ -267,18 +267,21 @@ export function AddFood() {
               onDragLeave={() => setDragging(false)}
               onDrop={onDrop}
               disabled={aiBlocked || busy !== null}
-              className={`flex min-h-0 flex-1 flex-col items-center justify-center gap-3.5 rounded-2xl border border-dashed p-8 transition-colors disabled:opacity-40 disabled:hover:border-hairline-strong disabled:hover:bg-panel ${
+              className={`relative flex min-h-80 flex-1 flex-col items-center justify-center gap-3.5 overflow-hidden rounded-2xl border border-dashed p-8 transition-colors disabled:opacity-40 disabled:hover:border-hairline-strong disabled:hover:bg-panel ${
                 dragging
                   ? "border-accent bg-accent-wash"
                   : "border-hairline-strong bg-panel hover:border-accent hover:bg-accent-wash"
               }`}
             >
               {preview ? (
-                <img
-                  src={preview}
-                  alt=""
-                  className="max-h-full max-w-full rounded-lg object-contain"
-                />
+                // Keep the photo out of layout so its dimensions cannot resize the drop zone.
+                <span className="absolute inset-8">
+                  <img
+                    src={preview}
+                    alt=""
+                    className="h-full w-full rounded-lg object-contain"
+                  />
+                </span>
               ) : (
                 <>
                   <span className="flex h-13 w-13 items-center justify-center rounded-lg border-[1.5px] border-icon-faint">
@@ -296,15 +299,18 @@ export function AddFood() {
               )}
             </button>
 
-            {photoFile && (
-              <button
-                onClick={clearPhoto}
-                disabled={busy !== null}
-                className="h-9 flex-none text-caption text-subtle transition-colors hover:text-ink disabled:opacity-40"
-              >
-                Remove photo
-              </button>
-            )}
+            {/* Reserve the action row so staging or removing a photo keeps the drop zone the same size. */}
+            <div className="flex h-9 flex-none items-center justify-center">
+              {photoFile && (
+                <button
+                  onClick={clearPhoto}
+                  disabled={busy !== null}
+                  className="h-full text-caption text-subtle transition-colors hover:text-ink disabled:opacity-40"
+                >
+                  Remove photo
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col gap-4">
