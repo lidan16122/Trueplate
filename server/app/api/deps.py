@@ -128,3 +128,21 @@ async def get_current_user(claims: TokenClaims, db: DbSession) -> User:
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_session_user(request: Request, db: DbSession, denylist: Denylist) -> User | None:
+    """Allow anonymous startup while keeping recoverable sessions on the shared refresh path."""
+    try:
+        claims = await get_token_claims(request, denylist)
+        return await get_current_user(claims, db)
+    except HTTPException as exc:
+        # A refresh cookie may restore access, so its 401 must reach the client.
+        # Infrastructure failures remain errors rather than masquerading as signed-out users.
+        if exc.status_code != status.HTTP_401_UNAUTHORIZED or request.cookies.get(
+            settings.refresh_cookie_name
+        ):
+            raise
+        return None
+
+
+SessionUser = Annotated[User | None, Depends(get_session_user)]

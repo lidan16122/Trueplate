@@ -11,7 +11,7 @@ from app.api.cookies import (
     set_auth_cookies,
     set_oauth_state_cookie,
 )
-from app.api.deps import CurrentUser, DbSession, Denylist, RefreshTokens, TokenClaims
+from app.api.deps import CurrentUser, DbSession, Denylist, RefreshTokens, SessionUser, TokenClaims
 from app.api.errors import translate_service_error
 from app.config import settings
 from app.schemas.auth import (
@@ -332,15 +332,25 @@ async def logout(
     return MessageResponse(detail="Signed out")
 
 
+@router.get("/session", response_model=SessionResponse | None)
+async def read_session(
+    user: SessionUser, db: DbSession, response: Response
+) -> SessionResponse | None:
+    """Discover a session on startup; a visitor without one receives JSON null."""
+    # Both anonymous and authenticated answers are browser-specific and must be fresh on reload.
+    response.headers["Cache-Control"] = "no-store"
+    if user is None:
+        return None
+
+    return SessionResponse(
+        user=UserOut.model_validate(user),
+        needs_onboarding=not await has_completed_onboarding(db, user.id),
+    )
+
+
 @router.get("/me", response_model=SessionResponse)
 async def read_current_user(user: CurrentUser, db: DbSession) -> SessionResponse:
-    """The session as the client sees it on a cold page load.
-
-    Carries `needs_onboarding` and not just the user: the auth cookies are
-    httpOnly, so a reload has no way to rediscover that the wizard is still
-    outstanding. Without it the client can only learn this at sign-in, and a
-    user who closed the tab mid-wizard comes back to a day view with no targets.
-    """
+    """Read an authenticated session, including whether onboarding is still outstanding."""
     return SessionResponse(
         user=UserOut.model_validate(user),
         needs_onboarding=not await has_completed_onboarding(db, user.id),

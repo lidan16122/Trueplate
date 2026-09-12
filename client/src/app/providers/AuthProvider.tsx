@@ -11,18 +11,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [needsOnboarding, setNeedsOnboarding] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // On boot the only way to know whether a session exists is to ask: the auth
-  // cookies are httpOnly, so their presence is invisible to JavaScript. The same
-  // call reports whether the wizard is outstanding, which is equally invisible.
+  // Session discovery treats a signed-out visitor as a normal result.
+  // The server checks the httpOnly cookies and preserves refresh recovery when possible.
   useEffect(() => {
     let cancelled = false;
 
     authApi
-      .me()
+      .session()
       .then((session) => {
         if (cancelled) return;
-        setUser(session.user);
-        setNeedsOnboarding(session.needs_onboarding);
+        setUser(session?.user ?? null);
+        setNeedsOnboarding(session?.needs_onboarding ?? false);
       })
       .catch(() => {
         if (cancelled) return;
