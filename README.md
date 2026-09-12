@@ -129,6 +129,15 @@ to it with *"Google sign-in is unavailable right now."*
 
 The values below are the defaults in `server/app/config.py`; deployments can override them.
 
+**Startup session discovery** — `GET /api/v1/auth/session` returns `200` with JSON `null`
+when there is no authenticated user and no refresh cookie, so opening the sign-in page does
+not generate a pair of failed auth requests. An authenticated visitor receives the same user
+and onboarding state as `/auth/me`; both startup results use `Cache-Control: no-store`.
+
+If access is rejected but a refresh cookie exists, discovery returns `401` to invoke the
+client's shared refresh-and-retry flow. `/auth/me` and other protected endpoints still require
+authentication, and database or infrastructure errors remain errors during discovery.
+
 **Access token** — a 15-minute HS256 JWT in an httpOnly, Secure, SameSite=Lax cookie at `/`.
 Verified by signature alone, so the common path never touches Redis. Never in `localStorage`: a
 token readable by JavaScript is a token stealable by any injected script.

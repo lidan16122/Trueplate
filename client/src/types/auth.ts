@@ -8,8 +8,8 @@ export interface User {
   initials: string;
 }
 
-/** Returned by both `POST /auth/google` and `GET /auth/me` — one shape, so
- *  sign-in and a cold reload cannot disagree about where a user belongs. */
+/** Shared by sign-in, `/auth/me`, and authenticated `/auth/session` results.
+ *  The same onboarding state keeps sign-in and reload routing consistent. */
 export interface SessionResponse {
   user: User;
   needs_onboarding: boolean;

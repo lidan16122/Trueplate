@@ -32,6 +32,84 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json" },
 });
 
+test("anonymous startup makes one successful request without refreshing or expiring", async (t) => {
+  const { http, auth } = await modules();
+  const seen = [];
+  let expired = 0;
+  http.onSessionExpired(() => { expired++; });
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(options.credentials, "include");
+    seen.push(url);
+    return json(null);
+  });
+
+  assert.equal(await auth.session(), null);
+  assert.deepEqual(seen, ["/api/v1/auth/session"]);
+  assert.equal(expired, 0);
+});
+
+test("startup and protected requests share refresh recovery", async (t) => {
+  const { auth, logs } = await modules();
+  let refreshed = false;
+  let refreshes = 0;
+  let release;
+  const pending = new Promise((resolve) => { release = resolve; });
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url.endsWith("/auth/refresh")) {
+      refreshes++;
+      await pending;
+      refreshed = true;
+      return json({ detail: "Session refreshed" });
+    }
+    return refreshed ? json({ path: url }) : json({ detail: "Not authenticated" }, 401);
+  });
+
+  const requests = Promise.all([auth.session(), logs.day("2026-09-12")]);
+  await setImmediate();
+  assert.equal(refreshes, 1);
+  release();
+  assert.deepEqual((await requests).map((value) => value.path), [
+    "/api/v1/auth/session", "/api/v1/logs/2026-09-12",
+  ]);
+});
+
+test("a temporary startup failure remains an error without triggering refresh", async (t) => {
+  const { http, auth } = await modules();
+  const seen = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    seen.push(url);
+    return json({ detail: "Temporarily unavailable" }, 503);
+  });
+
+  await assert.rejects(auth.session(), (err) => err instanceof http.ApiError && err.status === 503);
+  assert.deepEqual(seen, ["/api/v1/auth/session"]);
+});
+
+test("startup remains compatible while the older API is still deployed", async (t) => {
+  const { auth } = await modules();
+  const seen = [];
+  const session = { user: { id: "alice" }, needs_onboarding: false };
+  t.mock.method(globalThis, "fetch", async (url) => {
+    seen.push(url);
+    return url.endsWith("/auth/session") ? json({ detail: "Not Found" }, 404) : json(session);
+  });
+
+  assert.deepEqual(await auth.session(), session);
+  assert.deepEqual(seen, ["/api/v1/auth/session", "/api/v1/auth/me"]);
+});
+
+test("startup stops after one rejected refresh without falling back to another session check", async (t) => {
+  const { http, auth } = await modules();
+  const seen = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    seen.push(url);
+    return json({ detail: "Session expired" }, 401);
+  });
+
+  await assert.rejects(auth.session(), http.SessionExpiredError);
+  assert.deepEqual(seen, ["/api/v1/auth/session", "/api/v1/auth/refresh"]);
+});
+
 test("concurrent requests from different services share one refresh", async (t) => {
   const { auth, logs } = await modules();
   let refreshed = false;

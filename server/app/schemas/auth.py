@@ -22,13 +22,7 @@ class UserOut(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    """Who is signed in, and whether they still owe the onboarding wizard.
-
-    One shape for both ``POST /auth/google`` and ``GET /auth/me`` on purpose:
-    signing in and reloading the page ask the same question. Answering it in two
-    shapes is what let the client grow two components that disagreed about where
-    a user with no profile belongs.
-    """
+    """Identity and onboarding state shared by sign-in, session discovery, and protected reads."""
 
     user: UserOut
     # Drives the design's post-sign-in fork: a user with no profile or no active
