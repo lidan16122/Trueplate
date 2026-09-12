@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { ErrorNote } from "@/components/ErrorNote";
 import { ProgressBar } from "@/components/ProgressBar";
 import { Stat } from "@/components/Stat";
-import { formatDayLabel, formatFullDate, formatNumber, shiftDays } from "@/utils/format";
+import { formatDayLabel, formatFullDate, formatNumber, today } from "@/utils/format";
 import { DateStrip } from "./DateStrip";
 import { MacroBars } from "./MacroBars";
 import { MealGroup } from "./MealGroup";
@@ -55,8 +55,6 @@ export function Today() {
             days={7}
             summaries={summaries}
             onSelect={selectDate}
-            onShiftWeek={(dir) => selectDate(shiftDays(selected, dir * 7))}
-            showPaging
           />
         </div>
 
@@ -64,11 +62,24 @@ export function Today() {
           <DateStrip selected={selected} days={14} summaries={summaries} onSelect={selectDate} />
         </div>
 
-        <div className="mt-6 hidden items-baseline justify-between md:flex">
-          <h1 className="text-[24px] font-semibold tracking-[-0.02em] text-ink">
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 md:mt-6">
+          <h1 className="hidden text-[24px] font-semibold tracking-[-0.02em] text-ink md:block">
             {formatDayLabel(selected, true)}
           </h1>
-          <span className="font-mono text-caption text-faint">{formatFullDate(selected)}</span>
+          <label className="flex w-full items-center justify-between gap-3 text-caption text-muted md:w-auto">
+            Jump to date
+            {/* A native picker supports calendar selection and keyboard entry without another date format. */}
+            <input
+              type="date"
+              value={selected}
+              max={today()}
+              onChange={(event) => {
+                const input = event.currentTarget;
+                if (input.value && input.validity.valid) selectDate(input.value);
+              }}
+              className="h-11 min-w-0 rounded-sm border border-line bg-surface px-3 font-mono text-caption text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            />
+          </label>
         </div>
 
         {error && (
