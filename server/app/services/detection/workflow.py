@@ -37,7 +37,8 @@ async def detect_photo(
     # cache key additionally folds in the model and effort so a config change
     # cannot keep serving a stale reading.
     image_hash = detection_cache.hash_image(raw)
-    cache_key = detection_cache.photo_cache_key(image_hash)
+    # A caption can change both the portion and whether the request is allowed.
+    cache_key = detection_cache.photo_cache_key(image_hash, note, meal_type)
     cached = await detection_cache.read(db, cache_key)
     if cached is not None:
         await transaction.commit(db)
