@@ -8,7 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.detection import Detection
-from app.models.enums import DetectionMethod
+from app.models.enums import DetectionMethod, MealType
 from app.services.detection import cache as detection_cache
 from app.services.detection.detector import PROMPT_FINGERPRINT
 
@@ -70,3 +70,17 @@ def test_the_key_changes_when_the_prompt_does() -> None:
     key = detection_cache.photo_cache_key("abc123")
     assert key != detection_cache._key("abc123", "claude-opus-5", "medium")  # noqa: SLF001
     assert PROMPT_FINGERPRINT
+
+
+def test_photo_captions_and_meal_types_do_not_share_readings() -> None:
+    plain = detection_cache.photo_cache_key("image")
+    caption = detection_cache.photo_cache_key("image", "half a portion")
+    lunch = detection_cache.photo_cache_key("image", "half a portion", MealType.LUNCH)
+    assert len({plain, caption, lunch}) == 3
+    assert caption == detection_cache.photo_cache_key("image", " half a portion ")
+
+
+def test_user_supplied_separators_cannot_collide_with_another_field() -> None:
+    assert detection_cache._key("rice|lunch", "dinner") != detection_cache._key(
+        "rice", "lunch|dinner"
+    )

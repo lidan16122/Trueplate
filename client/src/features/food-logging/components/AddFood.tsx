@@ -77,6 +77,7 @@ export function AddFood() {
                 </label>
                 <textarea
                   id="meal-description"
+                  maxLength={500}
                   autoFocus
                   rows={3}
                   value={description}
@@ -147,7 +148,7 @@ export function AddFood() {
         </div>
 
         {error && (
-          <div className="mx-6 mb-4 rounded-card border border-line-dark bg-ink-2 px-4 py-3 text-caption leading-relaxed text-on-dark">
+          <div role="alert" className="mx-6 mb-4 rounded-card border border-line-dark bg-ink-2 px-4 py-3 text-caption leading-relaxed text-on-dark">
             {error}
           </div>
         )}
@@ -320,6 +321,7 @@ export function AddFood() {
               </label>
               <textarea
                 id="meal-description-desktop"
+                maxLength={500}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder={

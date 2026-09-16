@@ -13,6 +13,7 @@ the user abandoned before confirming.
 """
 
 import hashlib
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 
@@ -44,8 +45,13 @@ def hash_image(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def photo_cache_key(image_hash: str) -> str:
+def photo_cache_key(
+    image_hash: str, note: str | None = None, meal_type: MealType | None = None
+) -> str:
     """Cache key for a photo detection.
+
+    Captions and meal types belong to the request: sharing their result could
+    bypass a refusal or replay a portion another caller supplied.
 
     The model id, the effort and the prompt fingerprint are folded in for the
     same reason they are on the text path: each of them changes the answer.
@@ -58,11 +64,14 @@ def photo_cache_key(image_hash: str) -> str:
         settings.anthropic_model,
         settings.anthropic_effort,
         PROMPT_FINGERPRINT,
+        (note or "").strip(),
+        str(meal_type or ""),
     )
 
 
 def _key(*parts: str) -> str:
-    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+    # JSON keeps user-supplied separators inside their own field, so distinct inputs stay distinct.
+    return hashlib.sha256(json.dumps(parts, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def hash_text(description: str, meal_type: MealType | None) -> str:
@@ -95,9 +104,7 @@ async def read(db: AsyncSession, cache_key: str) -> FoodDetectionResponse | None
     if row is None:
         return None
 
-    if datetime.now(UTC) - as_utc(row.created_at) > timedelta(
-        days=settings.detections_ttl_days
-    ):
+    if datetime.now(UTC) - as_utc(row.created_at) > timedelta(days=settings.detections_ttl_days):
         # Expired rather than wrong. Deleting it here keeps the table from
         # growing without bound, since nothing else ever prunes it.
         await repository.delete(db, row)

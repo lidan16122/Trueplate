@@ -32,6 +32,20 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
   status, headers: { "Content-Type": "application/json" },
 });
 
+test("an unrelated food request preserves the server guidance without retrying", async (t) => {
+  const { http, detection } = await modules();
+  const detail = "Invalid request. Describe a meal, food or drink, or upload a food photo, menu or nutrition label.";
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return json({ detail }, 422);
+  });
+
+  await assert.rejects(detection.detectText("create me a react component"), (error) =>
+    error instanceof http.ApiError && error.status === 422 && error.message === detail);
+  assert.equal(calls, 1);
+});
+
 test("anonymous startup makes one successful request without refreshing or expiring", async (t) => {
   const { http, auth } = await modules();
   const seen = [];

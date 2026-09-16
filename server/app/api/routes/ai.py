@@ -18,6 +18,7 @@ from app.api.limits import AI_DETECT_SCOPE, RateLimit, require_prompt_allowance
 from app.config import settings
 from app.models.enums import MealType
 from app.schemas.detection import (
+    MAX_DESCRIPTION_LENGTH,
     FoodDetectionResponse,
     TextDetectionRequest,
     anthropic_tool_schema,
@@ -27,6 +28,7 @@ from app.services.detection import imaging, workflow
 from app.services.detection.detector import (
     DetectionError,
     DetectionRefused,
+    InvalidDetectionRequest,
     NotFoodError,
     NothingDetected,
 )
@@ -52,8 +54,10 @@ def _translate(exc: DetectionError | barcode_service.BarcodeError) -> HTTPExcept
     threw — and left the ``raise`` at every call site unreachable for exactly
     the inputs it was written to handle.
     """
-    if isinstance(exc, NotFoodError | NothingDetected | barcode_service.BarcodeError):
-        return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc))
+    if isinstance(
+        exc, InvalidDetectionRequest | NotFoodError | NothingDetected | barcode_service.BarcodeError
+    ):
+        return HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc))
     if isinstance(exc, DetectionRefused):
         return HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc))
     # DetectionUnavailable, and any future sibling: unreachable upstream or
@@ -90,7 +94,7 @@ async def detect_from_photo(
     db: DbSession,
     detector: Detector,
     image: UploadFile = File(...),  # noqa: B008 - FastAPI's parameter form
-    note: str | None = Form(None),  # noqa: B008
+    note: str | None = Form(None, max_length=MAX_DESCRIPTION_LENGTH),  # noqa: B008
     meal_type: MealType | None = Form(None),  # noqa: B008
 ) -> FoodDetectionResponse:
     """Identify foods and estimate portions from a meal photo."""

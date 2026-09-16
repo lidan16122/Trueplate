@@ -64,8 +64,8 @@ Detection keys include the model, effort, and `PROMPT_FINGERPRINT`, a digest ove
 prompt and tool schema. Preserve these inputs when relocating code so cached results do not
 silently outlive changes to the detector.
 
-Photo keys currently omit the optional note and meal type; text keys include normalized text
-and meal type. This is an existing cache limitation, not a complete key policy to copy into new work.
+Photo keys include the optional note and meal type; text keys include normalized text and meal
+type. Preserve these inputs so a cached result cannot bypass classification of a new caption.
 
 **Redis checks and their dependent mutations run together in Lua.**
 `app/stores/refresh_tokens.py` uses this for rotation and owner-scoped revocation so another
