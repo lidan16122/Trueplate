@@ -49,7 +49,7 @@ Identity and product lookups do not match unrelated rows, and existing ownership
 ## Validation and limits
 
 - Backend: **355 passed, 1 skipped**; Ruff lint passed.
-- Client: **12 passed**; TypeScript and ESLint passed.
+- Client: **12 passed**; TypeScript, ESLint and the production build passed.
 - Live configured model (`claude-opus-5`, medium effort): **8/8** scope checks passed. Five
   unrelated/injection requests were rejected; ordinary food, a food correction and Hebrew food
   descriptions were accepted. These calls used an in-memory database and substituted nutrition
@@ -64,6 +64,15 @@ still produce a schema-valid but incorrect food description; these checks do not
 language, image injection or indirect web injection is blocked. Keep the model isolated from
 database/code execution and rerun adversarial evaluations when changing prompts or models.
 Database regression execution used SQLite, not a live PostgreSQL penetration test.
+
+## Code review
+
+The Standards review found no documented-standard violations and one optional P3 maintenance
+issue: duplicate input-kind rejection checks. The duplicate was removed from nutrition resolution;
+the model-response parser owns those rejections. No Standards findings remain open.
+
+The Spec review found no missing requirements, unintended scope expansion or concrete
+implementation regressions against the original injection-protection request.
 
 The approach follows [Anthropic's prompt-injection guidance](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks)
 and [SQLAlchemy's bound-parameter guidance](https://docs.sqlalchemy.org/en/14/faq/sqlexpressions.html).

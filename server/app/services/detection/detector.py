@@ -794,10 +794,7 @@ class DetectionService:
         meal_type: MealType | None,
         image_hash: str | None = None,
     ) -> FoodDetectionResponse:
-        if result.input_kind == "invalid_request":
-            raise InvalidDetectionRequest()
-        if result.input_kind == "not_food":
-            raise NotFoodError(INVALID_REQUEST_MESSAGE)
+        # Input-scope rejections have already been handled by _parse_result.
         if not result.foods:
             raise NothingDetected(
                 "No identifiable food was found. Try a clearer photo or describe your meal."
