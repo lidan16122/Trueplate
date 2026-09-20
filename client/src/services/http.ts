@@ -58,6 +58,7 @@ async function refreshSession(): Promise<boolean> {
       // Only an explicit rejection ends the session. A gateway or network failure
       // leaves it available for recovery on a later request.
       if (response.status === 401) return false;
+      if (response.status === 409) return await waitForLegacyRefresh();
       if (!response.ok) {
         throw new ApiError(response.status, await readErrorMessage(response));
       }
@@ -69,6 +70,23 @@ async function refreshSession(): Promise<boolean> {
   })();
 
   return refreshInFlight;
+}
+
+/** Older APIs report a concurrent refresh before its cookies necessarily arrive.
+ * Verify access during separate deployments without consuming another refresh token. */
+async function waitForLegacyRefresh(): Promise<boolean> {
+  for (const delay of [0, 100, 200]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    const response = await fetch(`${API}/auth/me`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (response.ok) return true;
+    if (response.status !== 401) {
+      throw new ApiError(response.status, await readErrorMessage(response));
+    }
+  }
+  throw new ApiError(409, "Session refresh is still completing. Please try again.");
 }
 
 interface RequestOptions extends RequestInit {
