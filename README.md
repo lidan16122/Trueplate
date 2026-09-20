@@ -51,7 +51,7 @@ earlier days' targets.
 | Frontend | React 19, TypeScript 5, Vite 7, Tailwind CSS 4, React Router 7, Recharts |
 | Backend | Python 3.14, FastAPI, Pydantic 2 |
 | Database | PostgreSQL 17, async SQLAlchemy 2 with psycopg 3, Alembic migrations |
-| Sessions and request limits | Redis 8; secure HTTP-only cookies with rotating refresh tokens |
+| Sessions and request limits | Redis 8; secure HTTP-only cookies with revocable refresh sessions |
 | Sign-in | Google OAuth 2.0 |
 | Food recognition | Anthropic Claude API; Pillow for image preparation, pyzbar/ZBar for barcodes |
 | Nutrition sources | USDA FoodData Central and Open Food Facts |

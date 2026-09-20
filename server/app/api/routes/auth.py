@@ -31,7 +31,7 @@ from app.services.auth.identity import (
     EmailAlreadyRegisteredError,
     has_completed_onboarding,
 )
-from app.services.auth.sessions import establish_session, rotate_session
+from app.services.auth.sessions import establish_session, renew_session
 from app.services.errors import NotFoundError
 
 logger = logging.getLogger(__name__)
@@ -281,7 +281,7 @@ async def refresh_session(
     response: Response,
     refresh_tokens: RefreshTokens,
 ):
-    """Rotate the refresh token and mint a fresh access token.
+    """Renew the device session and mint a fresh access token.
 
     Every terminal failure clears the cookies, so a client that has lost its
     session cannot sit in a refresh loop against a dead token.
@@ -290,25 +290,11 @@ async def refresh_session(
     if not raw_token:
         return _expired_session_response("No refresh token")
 
-    result, access_token = await rotate_session(refresh_tokens, raw_token)
+    result, access_token = await renew_session(refresh_tokens, raw_token)
 
     if result.status == "ok":
-        set_auth_cookies(response, access_token=access_token, refresh_token=result.raw_token)
+        set_auth_cookies(response, access_token=access_token, refresh_token=raw_token)
         return MessageResponse(detail="Session refreshed")
-
-    if result.status == "retry":
-        # A concurrent refresh already won. The session is fine and the winner's
-        # cookie is live, so 409 rather than 401 — and crucially the cookies are
-        # left alone. The client should retry the original request, not tear
-        # down and send the user to sign-in.
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="A concurrent refresh is in progress; retry the request",
-        )
-
-    if result.status == "reuse_detected":
-        logger.warning("Refresh token reuse detected; revoked session family %s", result.family_id)
-        return _expired_session_response("Session revoked. Please sign in again.")
 
     return _expired_session_response("Refresh token is invalid or expired")
 

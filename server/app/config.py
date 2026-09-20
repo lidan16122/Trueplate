@@ -61,30 +61,6 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 1
 
-    # Replaying a just-rotated refresh token within this window is treated as a
-    # client retry (a flaky network, two tabs racing) rather than theft.
-    # Without it, one genuine concurrent refresh revokes the whole session.
-    # Costs an attacker nothing they could not already do inside the same few
-    # seconds; the next mismatched rotation still catches them.
-    refresh_reuse_grace_seconds: int = 15
-
-    # How long a rotated token stays *detectable* as a replay, as opposed to
-    # merely unknown.
-    #
-    # The catch that matters needs minutes, not days: a thief who uses the token
-    # first is caught on the victim's very next refresh, roughly one access-token
-    # life later. What this covers is the delayed replay — an attacker sitting on
-    # a token for a while before trying it — which is why it does not follow the
-    # session TTL down. Expiry slides, so an actively used family outlives every
-    # token rotated out of it; a tombstone on the session's own clock would
-    # expire first and a genuine theft would then read as a plain invalid token,
-    # rejected but with the family left alive and nothing logged.
-    #
-    # A week, not a month. Tombstones are the keys that accumulate here — an
-    # active session rotates about every access-token life — and retention past
-    # realistic dwell time buys alerting on a token that no longer works anyway.
-    refresh_reuse_tombstone_days: int = 7
-
     access_cookie_name: str = "tp_access"
     refresh_cookie_name: str = "tp_refresh"
     # Carries the CSRF state and the PKCE verifier for one in-flight sign-in.
@@ -236,10 +212,6 @@ class Settings(BaseSettings):
     @property
     def refresh_token_ttl_seconds(self) -> int:
         return self.refresh_token_ttl_days * 24 * 60 * 60
-
-    @property
-    def refresh_reuse_tombstone_seconds(self) -> int:
-        return self.refresh_reuse_tombstone_days * 24 * 60 * 60
 
 
 # Resolved once, at import. This is deliberately a plain module-level singleton

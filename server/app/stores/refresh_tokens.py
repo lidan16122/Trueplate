@@ -1,21 +1,7 @@
-"""Refresh-token storage: rotation, theft detection, and per-device sessions.
+"""Revocable device sessions with a stable, opaque refresh credential.
 
-Design notes worth keeping in mind before editing this file:
-
-* The raw token never reaches Redis — only its SHA-256. A leaked database dump
-  therefore yields nothing usable. SHA-256 rather than Argon2 is correct here:
-  the input is 256 bits of ``secrets`` output, so there is no dictionary to
-  attack and a slow KDF would only tax every refresh.
-
-* Rotation is **one-time-use**. Presenting a token that was already rotated is
-  not a mistake a healthy client makes — it means the token was captured — so
-  it revokes the whole family rather than just that token.
-
-* Rotation runs as a Lua script so check-and-swap is atomic. Without that, two
-  refreshes racing from the same device both observe the token as active, and
-  the loser is treated as a thief: the user gets signed out for using the app
-  from two tabs. The client's single-flight refresh is the other half of this
-  fix; neither alone is sufficient.
+Only the credential's SHA-256 is stored. Renewal keeps the same credential so
+concurrent tabs and lost responses cannot consume each other's session.
 """
 
 import hashlib
@@ -34,11 +20,7 @@ TOKEN_BYTES = 32  # 256 bits
 
 
 def generate_refresh_token() -> str:
-    """An opaque random string — deliberately not a JWT.
-
-    A refresh token needs to be revocable, and a self-describing signed token is
-    valid until it expires no matter what the server thinks.
-    """
+    """An opaque credential whose session can be revoked server-side."""
     return secrets.token_urlsafe(TOKEN_BYTES)
 
 
@@ -50,106 +32,40 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-# KEYS[1] rt:tok:<old>   KEYS[2] rt:used:<old>   KEYS[3] rt:tok:<new>
-# ARGV[1] family prefix  ARGV[2] user prefix     ARGV[3] ttl
-# ARGV[4] now (iso)      ARGV[5] new token hash
-# ARGV[6] now (epoch)    ARGV[7] reuse grace seconds
-# ARGV[8] tombstone ttl
-#
-# Returns {status, ...}:
-#   {"OK", user_id, family_id} | {"RETRY", family_id}
-#   | {"REUSE", family_id}     | {"INVALID"}
-#
-# Note: the family and user keys are derived inside the script from the value
-# read out of KEYS[1], so they are not declared up front. That is safe on a
-# single Redis node; moving to Redis Cluster would need hash tags to keep a
-# family's keys in one slot.
-_ROTATE_LUA = """
-local active = redis.call('HGETALL', KEYS[1])
+# KEYS[1] token key; ARGV: family prefix, user prefix, ttl, now, token hash.
+# Checking the family and extending its expiry together prevents renewal from
+# recreating a session that logout has already removed.
+_RENEW_LUA = """
+local token = redis.call('HMGET', KEYS[1], 'user_id', 'family_id')
+if not token[1] or not token[2] then return {'INVALID'} end
 
-if #active == 0 then
-  local used = redis.call('HGETALL', KEYS[2])
-  if #used > 0 then
-    local u = {}
-    for i = 1, #used, 2 do u[used[i]] = used[i + 1] end
-
-    -- Distinguish a concurrent retry from an actual replay. Two tabs (or one
-    -- flaky connection) refreshing at the same instant would otherwise look
-    -- identical to a stolen token, and revoking on that would sign real users
-    -- out for opening a second tab.
-    local age = tonumber(ARGV[6]) - tonumber(u['rotated_at'])
-    if age <= tonumber(ARGV[7]) then
-      return {'RETRY', u['family_id']}
-    end
-    return {'REUSE', u['family_id']}
-  end
-  -- Unknown or expired. Revoke nothing: a random string must not be able to
-  -- destroy a session it has no relationship to.
-  return {'INVALID'}
-end
-
-local data = {}
-for i = 1, #active, 2 do data[active[i]] = active[i + 1] end
-
-local user_id    = data['user_id']
-local family_id  = data['family_id']
+local user_id = token[1]
+local family_id = token[2]
 local family_key = ARGV[1] .. family_id
-local user_key   = ARGV[2] .. user_id
-local ttl        = tonumber(ARGV[3])
--- Separate from `ttl`: the tombstone outlives its own family on purpose.
-local grave_ttl  = tonumber(ARGV[8])
-local now        = ARGV[4]
-local new_hash   = ARGV[5]
+local user_key = ARGV[2] .. user_id
+local family = redis.call('HMGET', family_key, 'user_id', 'current_token_hash')
+if family[1] ~= user_id or family[2] ~= ARGV[5] then return {'INVALID'} end
 
-redis.call('DEL', KEYS[1])
-redis.call('HSET', KEYS[2], 'family_id', family_id, 'rotated_at', ARGV[6])
-redis.call('EXPIRE', KEYS[2], grave_ttl)
-
-redis.call('HSET', KEYS[3], 'user_id', user_id, 'family_id', family_id, 'issued_at', now)
-redis.call('EXPIRE', KEYS[3], ttl)
-
--- Only touch a family that still exists. A concurrent `revoke_family` (a
--- logout, or theft detection) may have deleted it between the HGETALL above
--- and here; an unconditional HSET would recreate it holding nothing but a
--- token hash, with no user_id for revoke to key off. The session would then
--- survive its own logout and be unreachable from the session list.
-if redis.call('EXISTS', family_key) == 1 then
-  -- Sliding expiration: an actively used session is never forced to re-login,
-  -- while a genuinely dormant one still ages out.
-  redis.call('HSET', family_key, 'current_token_hash', new_hash, 'last_used_at', now)
-  redis.call('EXPIRE', family_key, ttl)
-  redis.call('SADD', user_key, family_id)
-  redis.call('EXPIRE', user_key, ttl)
-else
-  -- The family went away mid-rotation. Undo the token we just minted and
-  -- report the session as gone, rather than leaving an orphan that resolves
-  -- to a family nobody owns.
-  redis.call('DEL', KEYS[3])
-  return {'INVALID'}
-end
-
+local ttl = tonumber(ARGV[3])
+redis.call('EXPIRE', KEYS[1], ttl)
+redis.call('HSET', family_key, 'last_used_at', ARGV[4])
+redis.call('EXPIRE', family_key, ttl)
+redis.call('SADD', user_key, family_id)
+redis.call('EXPIRE', user_key, ttl)
 return {'OK', user_id, family_id}
 """
 
-# KEYS[1] rt:family:<id>
-# ARGV[1] token prefix   ARGV[2] user prefix
-# ARGV[3] is an optional owner id. When present the script revokes only a family
-# that user owns, so authorisation is the operation rather than a check in front
-# of it — a foreign family id is a no-op, with no window between checking and
-# acting and nothing a caller can forget to do.
+# KEYS[1] family key; ARGV: token prefix, user prefix, optional owner id.
+# Ownership is checked inside the mutation so a foreign family id is a no-op.
 _REVOKE_FAMILY_LUA = """
 local family = redis.call('HGETALL', KEYS[1])
-if #family == 0 then
-  return 0
-end
+if #family == 0 then return 0 end
 
 local data = {}
 for i = 1, #family, 2 do data[family[i]] = family[i + 1] end
 
 local owner = ARGV[3]
-if owner ~= '' and data['user_id'] ~= owner then
-  return 0
-end
+if owner ~= '' and data['user_id'] ~= owner then return 0 end
 
 if data['current_token_hash'] then
   redis.call('DEL', ARGV[1] .. data['current_token_hash'])
@@ -169,32 +85,20 @@ class IssuedToken:
 
 
 @dataclass(frozen=True, slots=True)
-class RotationResult:
-    """Outcome of consuming a refresh token.
+class RenewalResult:
+    """Identity of a live session, or rejection without modifying other sessions."""
 
-    ``retry`` and ``reuse_detected`` are both replays of an already-rotated
-    token, separated only by how long ago the rotation happened. The distinction
-    matters enormously: one is a second browser tab, the other is a thief.
-    """
-
-    status: Literal["ok", "retry", "reuse_detected", "invalid"]
+    status: Literal["ok", "invalid"]
     user_id: str | None = None
     family_id: str | None = None
-    raw_token: str | None = None
 
 
 class RefreshTokenStore:
     def __init__(self, redis: Redis) -> None:
         self._redis = redis
         self._ttl = settings.refresh_token_ttl_seconds
-        # Read once here like `_ttl`, not per call: both are key lifetimes
-        # handed to a script. The grace window is not — that is a decision
-        # made fresh on every rotation.
-        self._tombstone_ttl = settings.refresh_reuse_tombstone_seconds
-        self._rotate = redis.register_script(_ROTATE_LUA)
+        self._renew = redis.register_script(_RENEW_LUA)
         self._revoke_family_script = redis.register_script(_REVOKE_FAMILY_LUA)
-
-    # ---------- issue ----------
 
     async def create_session(
         self,
@@ -204,12 +108,13 @@ class RefreshTokenStore:
         user_agent: str = "",
         ip: str = "",
     ) -> IssuedToken:
-        """Start a new token family — one per device/sign-in."""
+        """Start a separate session per sign-in, keeping only its credential hash."""
         raw_token = generate_refresh_token()
         token_hash = hash_token(raw_token)
         family_id = str(uuid.uuid4())
         now = _now_iso()
 
+        # Keep the existing key layout so deployed sessions survive this change.
         pipe = self._redis.pipeline(transaction=True)
         pipe.hset(
             keys.refresh_token_key(token_hash),
@@ -222,10 +127,6 @@ class RefreshTokenStore:
                 "user_id": user_id,
                 "family_id": family_id,
                 "current_token_hash": token_hash,
-                # Metadata for a "your active devices" screen. Nothing reads it
-                # today — the listing endpoint was removed — but writing it on
-                # every sign-in is what lets that screen come back later showing
-                # real history instead of blanks for every session predating it.
                 "device_label": device_label,
                 "user_agent": user_agent[:512],
                 "ip": ip,
@@ -240,65 +141,29 @@ class RefreshTokenStore:
 
         return IssuedToken(raw_token=raw_token, family_id=family_id)
 
-    # ---------- rotate ----------
+    async def renew(self, raw_token: str) -> RenewalResult:
+        """Extend a live session without replacing its credential.
 
-    async def rotate(self, raw_token: str) -> RotationResult:
-        """Consume a refresh token and issue its replacement.
-
-        On genuine reuse the whole family is revoked before returning, so the
-        caller only has to translate the result into a response.
+        Every caller receives the same outcome regardless of response ordering;
+        an unknown, expired, or revoked credential cannot restore a session.
         """
-        old_hash = hash_token(raw_token)
-        new_raw = generate_refresh_token()
-        new_hash = hash_token(new_raw)
-        now = datetime.now(UTC)
-
-        result = await self._rotate(
-            keys=[
-                keys.refresh_token_key(old_hash),
-                keys.refresh_used_key(old_hash),
-                keys.refresh_token_key(new_hash),
-            ],
+        token_hash = hash_token(raw_token)
+        result = await self._renew(
+            keys=[keys.refresh_token_key(token_hash)],
             args=[
                 keys.REFRESH_FAMILY_PREFIX,
                 keys.REFRESH_USER_PREFIX,
                 self._ttl,
-                now.isoformat(),
-                new_hash,
-                now.timestamp(),
-                settings.refresh_reuse_grace_seconds,
-                self._tombstone_ttl,
+                _now_iso(),
+                token_hash,
             ],
         )
-
-        status = result[0]
-        if status == "OK":
-            return RotationResult(
-                status="ok", user_id=result[1], family_id=result[2], raw_token=new_raw
-            )
-
-        if status == "RETRY":
-            # A concurrent refresh already won. Reject this one, but leave the
-            # session intact — the winner's token is the live one.
-            return RotationResult(status="retry", family_id=result[1])
-
-        if status == "REUSE":
-            family_id = result[1]
-            await self.revoke_family(family_id)
-            return RotationResult(status="reuse_detected", family_id=family_id)
-
-        return RotationResult(status="invalid")
-
-    # ---------- revoke ----------
+        if result[0] == "OK":
+            return RenewalResult(status="ok", user_id=result[1], family_id=result[2])
+        return RenewalResult(status="invalid")
 
     async def revoke_family(self, family_id: str, *, owner_id: str | None = None) -> bool:
-        """Kill one device/session. Also the theft response.
-
-        Pass ``owner_id`` when the caller is acting for a specific user: the
-        revoke then applies only if that user owns the family, and returns False
-        otherwise. Theft detection omits it, because there the family is already
-        known from the presented token.
-        """
+        """Revoke a device session, restricted to its owner when supplied."""
         revoked = await self._revoke_family_script(
             keys=[keys.refresh_family_key(family_id)],
             args=[keys.REFRESH_TOKEN_PREFIX, keys.REFRESH_USER_PREFIX, owner_id or ""],
@@ -306,7 +171,7 @@ class RefreshTokenStore:
         return bool(revoked)
 
     async def revoke_by_token(self, raw_token: str) -> bool:
-        """Sign out of the current device, given its refresh token."""
+        """Sign out of the current device, given its refresh credential."""
         token_hash = hash_token(raw_token)
         record = await self._redis.hgetall(keys.refresh_token_key(token_hash))
         if not record:
@@ -322,4 +187,3 @@ class RefreshTokenStore:
                 revoked += 1
         await self._redis.delete(keys.refresh_user_families_key(user_id))
         return revoked
-

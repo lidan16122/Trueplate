@@ -7,11 +7,7 @@ exists so `test_auth_routes` does not have to import from `test_refresh_tokens`
 gamble.
 """
 
-from datetime import UTC, datetime
-
 from app.services.auth.google_oauth import GoogleIdentity
-from app.stores import keys
-from app.stores.refresh_tokens import hash_token
 
 AUTH_API = "/api/v1/auth"
 
@@ -41,19 +37,6 @@ def google_payload(**overrides) -> dict:
 
 async def sign_in(client, credential: str = "good-token"):
     return await client.post(f"{AUTH_API}/google", json={"credential": credential})
-
-
-async def age_tombstone(redis, raw_token: str, seconds: float = 3600) -> None:
-    """Backdate a rotated token's tombstone past the reuse grace window.
-
-    Replays inside the window are deliberately forgiven, so exercising genuine
-    theft detection means making the rotation look old.
-    """
-    await redis.hset(
-        keys.refresh_used_key(hash_token(raw_token)),
-        "rotated_at",
-        str(datetime.now(UTC).timestamp() - seconds),
-    )
 
 
 def set_cookie_header(response, name: str) -> str:
@@ -91,6 +74,4 @@ async def complete_onboarding(client, **overrides):
     case the redirect callback has to route to /today rather than the wizard —
     without importing from test_onboarding_routes.
     """
-    return await client.post(
-        "/api/v1/onboarding", json={**ONBOARDING_ANSWERS, **overrides}
-    )
+    return await client.post("/api/v1/onboarding", json={**ONBOARDING_ANSWERS, **overrides})

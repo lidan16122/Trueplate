@@ -150,7 +150,7 @@ test("concurrent requests from different services share one refresh", async (t) 
   ]);
 });
 
-test("a 409 refresh retries without expiring the session", async (t) => {
+test("a refresh failure does not pretend another response has authenticated us", async (t) => {
   const { http, auth } = await modules();
   let reads = 0;
   let expired = 0;
@@ -159,10 +159,38 @@ test("a 409 refresh retries without expiring the session", async (t) => {
     if (url.endsWith("/auth/refresh")) return json({}, 409);
     return ++reads === 1 ? json({}, 401) : json({ user: "still signed in" });
   });
-  assert.deepEqual(await auth.me(), { user: "still signed in" });
-  assert.equal(reads, 2);
+  await assert.rejects(auth.me(), (err) => err instanceof http.ApiError && err.status === 409);
+  assert.equal(reads, 1);
   assert.equal(expired, 0);
 });
+
+for (const failure of ["unavailable", "network"]) {
+  test(`${failure} during refresh preserves the session and allows later recovery`, async (t) => {
+    const { http, auth } = await modules();
+    let expired = 0;
+    let refreshes = 0;
+    let recovered = false;
+    http.onSessionExpired(() => { expired++; });
+    t.mock.method(globalThis, "fetch", async (url) => {
+      if (url.endsWith("/auth/refresh")) {
+        if (++refreshes === 1) {
+          if (failure === "network") throw new TypeError("Failed to fetch");
+          return json({ detail: "Temporarily unavailable" }, 503);
+        }
+        recovered = true;
+        return json({ detail: "Session refreshed" });
+      }
+      return recovered ? json({ user: "still signed in" }) : json({}, 401);
+    });
+
+    await assert.rejects(auth.me(), (error) => failure === "network"
+      ? error instanceof TypeError
+      : error instanceof http.ApiError && error.status === 503);
+    assert.equal(expired, 0);
+    assert.deepEqual(await auth.me(), { user: "still signed in" });
+    assert.equal(refreshes, 2);
+  });
+}
 
 test("a rejected retry notifies the auth provider and stops refreshing", async (t) => {
   const { http, auth } = await modules();

@@ -33,8 +33,8 @@ from tests.helpers import google_payload
 async def redis() -> AsyncGenerator[aioredis.FakeRedis]:
     """An in-process Redis that executes real Lua via lupa.
 
-    Not a mock of our own code: the rotation script is genuinely evaluated, so
-    the check-and-swap semantics these tests depend on are actually exercised.
+    The real renewal and revocation scripts execute here so their atomic
+    session checks are exercised without a running Redis server.
     """
     client = aioredis.FakeRedis(decode_responses=True)
     try:

@@ -62,6 +62,28 @@ async def test_an_invalid_access_cookie_without_refresh_is_anonymous(client):
     assert (await client.get(f"{API}/me")).status_code == 401
 
 
+async def test_refresh_authenticates_even_if_another_tabs_response_has_not_arrived(
+    client, google_ok
+):
+    await sign_in(client)
+    refresh = client.cookies[settings.refresh_cookie_name]
+    client.cookies.delete(settings.access_cookie_name)
+
+    # Both tabs sent the same cookie before either response arrived. The first
+    # response's Set-Cookie headers may still be in transit when the second finishes.
+    first = await client.post(f"{API}/refresh")
+    assert first.status_code == 200
+    client.cookies.clear()
+    client.cookies.set(settings.refresh_cookie_name, refresh, path=settings.refresh_cookie_path)
+
+    second = await client.post(f"{API}/refresh")
+
+    session = await client.get(f"{API}/session")
+    assert session.status_code == 200
+    assert session.json()["user"]["email"] == "alice@example.com"
+    assert second.status_code == 200
+
+
 @pytest.mark.parametrize("refresh_available", [False, True])
 async def test_expired_access_only_requests_recovery_when_refresh_is_available(
     client, google_ok, monkeypatch, refresh_available

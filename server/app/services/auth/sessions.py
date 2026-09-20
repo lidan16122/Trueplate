@@ -11,7 +11,7 @@ from app.services.auth.google_oauth import verify_google_credential
 from app.services.auth.identity import has_completed_onboarding, upsert_google_user
 from app.services.errors import NotFoundError
 from app.stores.access_tokens import AccessTokenDenylist
-from app.stores.refresh_tokens import RefreshTokenStore, RotationResult
+from app.stores.refresh_tokens import RefreshTokenStore, RenewalResult
 from app.utils.devices import describe_device
 
 
@@ -68,11 +68,11 @@ async def establish_session(
     )
 
 
-async def rotate_session(
+async def renew_session(
     refresh_tokens: RefreshTokenStore, raw_token: str
-) -> tuple[RotationResult, str | None]:
-    """Mint an access token only after the store has accepted the rotation."""
-    result = await refresh_tokens.rotate(raw_token)
+) -> tuple[RenewalResult, str | None]:
+    """Mint a JWT only after confirming the refresh session is still live."""
+    result = await refresh_tokens.renew(raw_token)
     access_token = None
     if result.status == "ok":
         access = create_access_token(user_id=result.user_id, session_id=result.family_id)
