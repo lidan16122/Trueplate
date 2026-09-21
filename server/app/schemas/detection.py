@@ -105,7 +105,11 @@ class DetectedFood(BaseModel):
     search_terms: list[SearchTerm] = Field(
         min_length=1,
         max_length=5,
-        description="One to five short food names, most specific first; never instructions",
+        description=(
+            "One to five short food names, most specific first; never instructions. "
+            "Describe only this entry in its observed preparation state. Exclude other "
+            "separately logged foods or sauces from every term."
+        ),
     )
     portion_reasoning: str | None = Field(
         default=None,
@@ -171,10 +175,12 @@ class FoodDetectionResult(BaseModel):
     components: list[FoodName] = Field(
         max_length=32,
         description=(
-            "Name each loggable food as served before listing its mass. Keep recognizable "
-            "prepared dishes whole: two cheese-pizza slices are ['cheese pizza']. "
-            "List independently served foods separately: ['rice', 'chicken', 'broccoli']. "
-            "Do not also list the ingredients already included in a prepared dish. "
+            "Use the image and description to decide which foods form a complete dish "
+            "and which are individual plate items, then name each before listing its mass. "
+            "Rice topped with chicken, sauce and potatoes is ['rice', 'chicken', 'sauce', "
+            "'potatoes']; sharing a plate or sauce does not make them one dish. "
+            "Keep recognizable dishes whole: two cheese-pizza slices are ['cheese pizza']. "
+            "Do not also list ingredients already included in a whole dish. "
             "`foods` must then hold exactly one entry per name here."
         ),
     )
@@ -373,10 +379,11 @@ def anthropic_tool_schema() -> dict:
             "Record the foods visible in the meal and estimate the edible mass of each "
             "in grams. Do not estimate calories or macronutrients — those are looked up "
             "from a nutrition database using the labels and search terms you provide. "
-            "Use one entry per loggable food as served. Keep prepared dishes such as "
-            "pizza or lasagna whole, including their ingredients. Group identical portions "
-            "with their combined mass. Include separately served sides, drinks and dips "
-            "as their own entries, without counting ingredients of a whole dish again."
+            "Decide from the input which foods form a recognizable complete dish, such as "
+            "pizza, a hamburger or lasagna, and keep that dish whole. Keep individual "
+            "plate items such as rice, chicken, potatoes and added sauce as their own "
+            "entries even when touching or covered by the same sauce. Group identical "
+            "portions with their combined mass, without counting any ingredient twice."
         ),
         "strict": True,
         "input_schema": _strip_unsupported(FoodDetectionResult.model_json_schema()),
@@ -400,7 +407,8 @@ def anthropic_portion_repair_tool(components: list[str]) -> tuple[type[BaseModel
         "description": (
             "Complete every named food portion in this one call. Each required field "
             "has a fixed food label; supply that food's mass and search terms. "
-            "Keep complete dishes whole. Never supply calories or macronutrients."
+            "Keep every named food separate from the other named foods, without splitting "
+            "a named complete dish into ingredients. Never supply calories or macronutrients."
         ),
         "strict": True,
         "input_schema": _strip_unsupported(model.model_json_schema()),

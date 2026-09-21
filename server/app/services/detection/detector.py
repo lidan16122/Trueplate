@@ -178,17 +178,28 @@ empty `components` and `foods` and null `notes`.
 
 ## Identify the foods as served
 
-Return one entry per loggable food: a recognizable prepared dish or an independently \
-served food. Keep a prepared dish whole even when its ingredients are visible. Pizza, \
-lasagna, a burger, a sandwich, and pasta with incorporated meat sauce are complete foods. \
-Their normal crust, cheese, sauce, filling and toppings are already included in the dish; \
-do not list those ingredients again or guess separate masses for them.
+Use your judgment from the image and description to distinguish a complete dish from \
+a meal made of individual foods. Return one entry per food, not one entry per meal. A \
+shared plate, bowl, menu title, or the words "with" and "topped with" do not make foods \
+a single dish. Touching, overlapping or sharing an added sauce is not enough to bundle them.
 
-Keep independently served foods separate. Rice beside chicken is two entries; pasta \
-beside a beef portion is two entries; chicken, rice and broccoli is three. Pizza beside \
-a salad and a dipping sauce is pizza, salad and dip. Include separate sides, drinks and \
-condiments even when small. Ingredients laid out before assembly are separate foods, and \
-an explicit user request to log ingredients separately should be respected.
+Keep identifiable plate items separate: rice, cooked chicken, potatoes and an added sauce \
+are four entries, even when the chicken sits on the rice or the sauce covers the chicken \
+and potatoes. Do not combine them into "chicken and potatoes", "chicken with sauce" or \
+an invented casserole. Pasta beside a beef portion is two entries. Include sides, drinks \
+and identifiable added sauces or dips even when small; the user need not say "separate".
+
+Keep a recognizable dish whole when its ingredients form that dish as assembled or \
+cooked: pizza, a hamburger, lasagna, a sandwich or pasta Bolognese. These are examples, \
+not an exhaustive list; apply the same judgment to other dishes supported by the input. \
+Their normal crust, bun, cheese, filling, incorporated sauce and toppings belong to the \
+dish even when visible. Do not list them again. A hamburger with fries and ketchup is \
+three entries: the burger (including its bun and filling), fries, and the added ketchup.
+
+Decide for each food within the meal: a whole dish can appear alongside individual foods. \
+When a supposed dish is ambiguous, keep the clearly identifiable foods separate rather \
+than inventing a recipe. Ingredients laid out before assembly are separate foods, and an \
+explicit user request to log ingredients separately should be respected.
 
 Group repeated portions of the same food into one entry with their combined edible mass: \
 two slices of the same pizza are one pizza entry, household_quantity 2, household_unit \
@@ -197,10 +208,11 @@ Different preparations, such as roast potatoes and mash, also remain separate.
 
 First fill `components` with the loggable foods as served, one short name each; then give \
 `foods` exactly one entry per name. For two cheese-pizza slices use ["cheese pizza"], not \
-an inventory of crust, cheese and sauce. For rice beside chicken use ["rice", "chicken"]. \
-Before recording, check the image for any separately served food you missed. If a dish \
-cannot be identified, report what you can identify and describe the uncertainty in notes; \
-do not invent a hidden recipe.
+an inventory of crust, cheese and sauce. For rice topped with chicken, sauce and potatoes \
+use ["rice", "chicken", "sauce", "potatoes"]. Before recording, check for any missed or \
+incorrectly bundled plate item. Estimate each entry's own mass, excluding foods recorded \
+in other entries so nothing is counted twice. If a dish cannot be identified, report what \
+you can identify and describe the uncertainty in notes; do not invent a hidden recipe.
 
 ## Search terms are a ladder
 
@@ -211,6 +223,13 @@ every rung; leave counts and filler like "pieces" or "slices" in the portion fie
 - Two thin-crust cheese-pizza slices → ["pizza cheese thin crust", "pizza cheese", "pizza"]
 - A recognizable beef lasagna → ["lasagna with meat", "lasagna"]
 - A separately served chicken drumstick → ["chicken drumstick cooked", "chicken cooked"]
+
+For individual plate items, search for each food in its observed preparation state without \
+the other entries. If chicken, potatoes and curry sauce have separate portions, omit \
+"curry" and sauce names from the chicken and potato queries: use ["chicken drumstick \
+cooked", "chicken cooked"] and ["potato boiled", "potato cooked", "potato"] when those \
+preparations are supported. Do not use "chicken curry meat only"; that is still a dish \
+query. A sauce-inclusive lookup would count the separately logged sauce again.
 
 Only include a crust style, topping, brand or preparation when supported by the image or \
 the user's description. A pizza lookup must stay pizza; never broaden it to cheese, sauce \
@@ -379,9 +398,10 @@ class DetectionService:
                 {
                     "type": "text",
                     "text": (
-                        "Identify the foods as served in this photo. Keep recognizable "
-                        "prepared dishes whole, include separately served foods, and "
-                        "estimate the combined edible weight of each food."
+                        "Identify the foods as served in this photo. Decide which are "
+                        "complete dishes and which are individual plate items. Sharing a "
+                        "plate or sauce does not make them one dish. Estimate each food's "
+                        "edible weight without counting any part twice."
                     ),
                 }
             )
@@ -682,7 +702,7 @@ class DetectionService:
                 f"holds {len(result.foods)} entry/entries"
                 + (f", missing: {', '.join(missing)}" if missing else "")
                 + ". Return one entry per loggable food, each with its own grams. "
-                "Keep prepared dishes whole and include separately served foods; "
+                "Keep individual plate items separate and recognizable complete dishes whole; "
                 "make the components inventory agree with those entries.",
             )
 

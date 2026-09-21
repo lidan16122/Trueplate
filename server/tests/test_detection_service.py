@@ -125,19 +125,27 @@ async def test_two_pizza_slices_are_one_sourced_portion_and_can_be_cached(
         ["cheese pizza", "pepperoni pizza"],
         ["pizza", "salad", "garlic dip"],
         ["rice", "chicken"],
+        ["rice", "chicken", "potatoes", "sauce"],
         ["pasta", "beef"],
         ["lasagna"],
+        ["hamburger", "fries", "ketchup"],
         ["apple"],
     ],
 )
+@pytest.mark.parametrize("input_kind", ["text", "photo", "captioned_photo"])
 async def test_separate_foods_and_complete_dishes_keep_their_reported_portions(
-    db_session: AsyncSession, labels: list[str]
+    db_session: AsyncSession, labels: list[str], input_kind: str
 ) -> None:
     foods = [
         {**food_result()["foods"][0], "label": label, "search_terms": [label]} for label in labels
     ]
     service, _ = _service(db_session, [message([tool_use(TOOL_NAME, food_result(foods=foods))])])
-    response = await service.detect_photo(TINY_JPEG)
+    description = ", ".join(labels)
+    if input_kind == "text":
+        response = await service.detect_text(description)
+    else:
+        note = description if input_kind == "captioned_photo" else None
+        response = await service.detect_photo(TINY_JPEG, note=note)
     assert [item.detected.label for item in response.items] == labels
     assert response.is_provisional is False
 
