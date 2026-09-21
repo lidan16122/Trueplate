@@ -1,9 +1,7 @@
 """Optional instant revocation for access tokens.
 
-Separate from refresh-token rotation: the two answer different questions and
-change for different reasons. Rotation is the core session mechanism; this is a
-switch that trades a Redis round-trip per request for the ability to kill a live
-token before it expires on its own.
+Separate from refresh-session revocation: this optional Redis lookup rejects an
+individual JWT before its normal expiry.
 """
 
 from redis.asyncio import Redis

@@ -23,7 +23,7 @@ export class ApiError extends Error {
   }
 }
 
-/** Raised when refreshing fails — the session is genuinely over. */
+/** Raised when the server rejects the session, rather than failing to answer. */
 export class SessionExpiredError extends ApiError {
   constructor(message = "Session expired") {
     super(401, message);
@@ -44,16 +44,7 @@ function notifySessionExpired() {
   for (const listener of sessionExpiredListeners) listener();
 }
 
-/**
- * The in-flight refresh, shared by every caller.
- *
- * This is load-bearing, not an optimisation. Refresh tokens are single-use and
- * rotated: if three requests 401 at once and each POSTs its own refresh, two of
- * them present a token the first has already consumed. The server forgives that
- * inside a short grace window, but outside it that is exactly the signature of
- * a stolen token — and the session gets revoked. One shared promise means one
- * rotation, so the situation never arises.
- */
+/** Shares renewal within a tab to avoid duplicate requests when access expires. */
 let refreshInFlight: Promise<boolean> | null = null;
 
 async function refreshSession(): Promise<boolean> {
@@ -64,22 +55,38 @@ async function refreshSession(): Promise<boolean> {
         credentials: "include",
       });
 
-      // 409 means a concurrent refresh won the race. The session is fine and
-      // the winning cookie is already set, so the original request should just
-      // be retried.
-      return response.ok || response.status === 409;
-    } catch {
-      return false;
+      // Only an explicit rejection ends the session. A gateway or network failure
+      // leaves it available for recovery on a later request.
+      if (response.status === 401) return false;
+      if (response.status === 409) return await waitForLegacyRefresh();
+      if (!response.ok) {
+        throw new ApiError(response.status, await readErrorMessage(response));
+      }
+      return true;
     } finally {
-      // Cleared here so the *next* 401 starts a fresh rotation rather than
-      // awaiting a settled promise forever. Callers already holding this
-      // promise are unaffected — they resolve from the reference they captured,
-      // not from the variable.
+      // A settled attempt must not prevent the next request from recovering.
       refreshInFlight = null;
     }
   })();
 
   return refreshInFlight;
+}
+
+/** Older APIs report a concurrent refresh before its cookies necessarily arrive.
+ * Verify access during separate deployments without consuming another refresh token. */
+async function waitForLegacyRefresh(): Promise<boolean> {
+  for (const delay of [0, 100, 200]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    const response = await fetch(`${API}/auth/me`, {
+      credentials: "include",
+      cache: "no-store",
+    });
+    if (response.ok) return true;
+    if (response.status !== 401) {
+      throw new ApiError(response.status, await readErrorMessage(response));
+    }
+  }
+  throw new ApiError(409, "Session refresh is still completing. Please try again.");
 }
 
 interface RequestOptions extends RequestInit {
@@ -102,11 +109,8 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   });
 
   if (response.status === 401 && !skipRefresh) {
-    // A 401 on the retry means the freshly-rotated token was rejected too, so
-    // the session really is gone. Falling through to a plain ApiError here — as
-    // this did — skips notifySessionExpired(), and the app keeps rendering a
-    // signed-in shell over a dead session, which is exactly what the listener
-    // in AuthProvider exists to prevent.
+    // Stop after one renewal if the new JWT is also rejected, and update the UI
+    // so it cannot keep showing an authenticated shell over a rejected session.
     if (_isRetry) {
       notifySessionExpired();
       throw new SessionExpiredError();

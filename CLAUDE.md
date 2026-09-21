@@ -68,7 +68,7 @@ Photo keys currently omit the optional note and meal type; text keys include nor
 and meal type. This is an existing cache limitation, not a complete key policy to copy into new work.
 
 **Redis checks and their dependent mutations run together in Lua.**
-`app/stores/refresh_tokens.py` uses this for rotation and owner-scoped revocation so another
+`app/stores/refresh_tokens.py` uses this for renewal and owner-scoped revocation so another
 request cannot interleave between checking a record and changing it.
 
 A redis-py pipeline with `transaction=True` runs its queued commands without interleaving;
@@ -140,11 +140,15 @@ a component is a token that went missing.
 **Auth tokens are invisible to JavaScript.** The cookies are httpOnly, so expiry can only
 be discovered from a 401. Never try to read, store, or inspect a token client-side.
 
-**Refresh is single-flight.** Concurrent 401s share one in-flight promise. Without it, N
-failures fire N rotations, and every loser presents a consumed token — which the server
-cannot distinguish from theft. This is the client half of a two-part fix; the server half
-is the reuse grace window in `stores/refresh_tokens.py`. Changing either alone reopens the
-hole.
+**Refresh keeps a stable, revocable credential.** Concurrent tabs and retried requests each
+receive usable access cookies without depending on another response arriving first. Redis
+stores only the credential hash; renewal extends the session expiry atomically. There are
+no consumed-token tombstones or replay-based revocation. Existing live token/family keys
+remain compatible; old tombstones expire without being read.
+
+**Refresh is single-flight within a tab.** Concurrent 401s share one renewal request.
+Only an authentication rejection expires the session in the HTTP client; network and
+server failures remain request errors.
 
 **Reach for CSS before a charting library.** The designed macro bars and progress fills are
 plain divs. Recharts is loaded lazily and only on `/progress`; importing it eagerly put
@@ -153,11 +157,11 @@ plain divs. Recharts is loaded lazily and only on `/progress`; importing it eage
 ## Tests
 
 Substitute the *external* dependency, never our own code. `fakeredis` executes the real Lua
-via lupa, and the identity tables run on in-memory SQLite, so rotation and theft detection
+via lupa, and the identity tables run on in-memory SQLite, so renewal and revocation
 are genuinely exercised. The suite needs no running Postgres or Redis — keep it that way.
 
 Name a test for the behaviour it pins, so a failure reads as a symptom:
-`test_parallel_refreshes_do_not_revoke_the_session`, not `test_rotate_2`.
+`test_parallel_refreshes_all_authenticate_the_same_session`, not `test_renew_2`.
 
 ## Commits
 

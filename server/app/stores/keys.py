@@ -6,9 +6,8 @@ stored, and just as importantly that user profiles, goals, and day totals are
 problem in exchange for nothing.
 """
 
-# --- auth: refresh-token rotation ---
+# --- auth: refresh sessions ---
 REFRESH_TOKEN = "rt:tok:{token_hash}"  # HASH  active token -> user_id, family_id
-REFRESH_USED = "rt:used:{token_hash}"  # HASH  tombstone -> family_id, rotated_at
 REFRESH_FAMILY = "rt:family:{family_id}"  # HASH one device/session's metadata
 REFRESH_USER_FAMILIES = "rt:user:{user_id}"  # SET  family ids, powers session list
 
@@ -35,10 +34,6 @@ REFRESH_USER_PREFIX = "rt:user:"
 
 def refresh_token_key(token_hash: str) -> str:
     return REFRESH_TOKEN.format(token_hash=token_hash)
-
-
-def refresh_used_key(token_hash: str) -> str:
-    return REFRESH_USED.format(token_hash=token_hash)
 
 
 def refresh_family_key(family_id: str) -> str:

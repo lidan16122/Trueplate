@@ -51,7 +51,7 @@ earlier days' targets.
 | Frontend | React 19, TypeScript 5, Vite 7, Tailwind CSS 4, React Router 7, Recharts |
 | Backend | Python 3.14, FastAPI, Pydantic 2 |
 | Database | PostgreSQL 17, async SQLAlchemy 2 with psycopg 3, Alembic migrations |
-| Sessions and request limits | Redis 8; secure HTTP-only cookies with rotating refresh tokens |
+| Sessions and request limits | Redis 8; secure HTTP-only cookies with revocable refresh sessions |
 | Sign-in | Google OAuth 2.0 |
 | Food recognition | Anthropic Claude API; Pillow for image preparation, pyzbar/ZBar for barcodes |
 | Nutrition sources | USDA FoodData Central and Open Food Facts |
@@ -246,6 +246,27 @@ git config core.hooksPath .githooks
 
 ## Important notes
 
+### Authentication and sessions
+
+Google sign-in sets an access JWT and an opaque refresh credential in HTTP-only cookies.
+Protected routes validate the JWT and check that its user is active; Redis stores only the
+refresh credential's hash, alongside its device session.
+
+Access JWTs expire after **15 minutes** by default (`ACCESS_TOKEN_TTL_MINUTES`). Refresh sessions
+expire after **one day without renewal** (`REFRESH_TOKEN_TTL_DAYS`); each successful refresh extends
+that expiry and issues a new access JWT. The refresh credential stays the same so concurrent tabs
+and retried requests can each recover without consuming another request's credential.
+
+Logout clears the browser's cookies and revokes its refresh session. An already-issued access JWT
+can remain valid until expiry; refresh-session revocation alone does not invalidate it immediately.
+Refresh credentials no longer use rotation, tombstones, or automatic replay-based theft detection.
+
+Existing live Redis sessions remain usable without a migration or cache flush. Old tombstones
+are ignored and expire naturally; `REFRESH_REUSE_GRACE_SECONDS` and `REFRESH_REUSE_TOMBSTONE_DAYS`
+are no longer used and can be removed from deployment configuration. During independent client/API
+deployments, the client makes a bounded check for usable access cookies if an older API returns
+a refresh conflict.
+
 ### Detection limits and caching
 
 - New accounts default to `users.max_prompts = 1`. For local development, adjust that
@@ -255,8 +276,8 @@ git config core.hooksPath .githooks
   but multiple foods saved from one text result can count separately.
 - Photo, text, and barcode endpoints also share a per-user rate limit: **20 requests per hour**
   by default, configurable in `server/.env`.
-- Reusing an identical photo can return a cached result even after changing its note or meal type.
-  Photo cache keys currently omit those two inputs.
+- Photo cache keys include the image, note, and meal type, plus the model, effort, and prompt/schema
+  fingerprint. Changing the note or meal type uses a separate cache entry.
 - Uploads default to an **8 MiB** limit. Use JPEG, PNG, or WebP; HEIC/HEIF decoding depends
   on image-library support in the runtime.
 

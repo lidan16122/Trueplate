@@ -150,7 +150,7 @@ test("concurrent requests from different services share one refresh", async (t) 
   ]);
 });
 
-test("a 409 refresh retries without expiring the session", async (t) => {
+test("a legacy refresh conflict recovers once another tab's cookies have arrived", async (t) => {
   const { http, auth } = await modules();
   let reads = 0;
   let expired = 0;
@@ -160,9 +160,85 @@ test("a 409 refresh retries without expiring the session", async (t) => {
     return ++reads === 1 ? json({}, 401) : json({ user: "still signed in" });
   });
   assert.deepEqual(await auth.me(), { user: "still signed in" });
+  assert.equal(reads, 3);
+  assert.equal(expired, 0);
+});
+
+test("a legacy conflict waits for usable access without consuming another refresh token", async (t) => {
+  const { http, logs } = await modules();
+  let probes = 0;
+  let refreshes = 0;
+  let reads = 0;
+  let expired = 0;
+  http.onSessionExpired(() => { expired++; });
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(options.credentials, "include");
+    if (url.endsWith("/auth/refresh")) {
+      refreshes++;
+      return json({}, 409);
+    }
+    if (url.endsWith("/auth/me")) return ++probes === 1 ? json({}, 401) : json({ user: "alice" });
+    return ++reads === 1 ? json({}, 401) : json({ entries: [] });
+  });
+
+  assert.deepEqual(await logs.day("2026-09-20"), { entries: [] });
+  assert.equal(probes, 2);
+  assert.equal(refreshes, 1);
   assert.equal(reads, 2);
   assert.equal(expired, 0);
 });
+
+test("an unresolved legacy conflict stops without retrying the protected request or expiring", async (t) => {
+  const { http, logs } = await modules();
+  let probes = 0;
+  let refreshes = 0;
+  let reads = 0;
+  let expired = 0;
+  http.onSessionExpired(() => { expired++; });
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url.endsWith("/auth/refresh")) {
+      refreshes++;
+      return json({}, 409);
+    }
+    if (url.endsWith("/auth/me")) probes++;
+    else reads++;
+    return json({}, 401);
+  });
+
+  await assert.rejects(logs.day("2026-09-20"), (err) => err instanceof http.ApiError && err.status === 409);
+  assert.equal(probes, 3);
+  assert.equal(refreshes, 1);
+  assert.equal(reads, 1);
+  assert.equal(expired, 0);
+});
+
+for (const failure of ["unavailable", "network"]) {
+  test(`${failure} during refresh preserves the session and allows later recovery`, async (t) => {
+    const { http, auth } = await modules();
+    let expired = 0;
+    let refreshes = 0;
+    let recovered = false;
+    http.onSessionExpired(() => { expired++; });
+    t.mock.method(globalThis, "fetch", async (url) => {
+      if (url.endsWith("/auth/refresh")) {
+        if (++refreshes === 1) {
+          if (failure === "network") throw new TypeError("Failed to fetch");
+          return json({ detail: "Temporarily unavailable" }, 503);
+        }
+        recovered = true;
+        return json({ detail: "Session refreshed" });
+      }
+      return recovered ? json({ user: "still signed in" }) : json({}, 401);
+    });
+
+    await assert.rejects(auth.me(), (error) => failure === "network"
+      ? error instanceof TypeError
+      : error instanceof http.ApiError && error.status === 503);
+    assert.equal(expired, 0);
+    assert.deepEqual(await auth.me(), { user: "still signed in" });
+    assert.equal(refreshes, 2);
+  });
+}
 
 test("a rejected retry notifies the auth provider and stops refreshing", async (t) => {
   const { http, auth } = await modules();

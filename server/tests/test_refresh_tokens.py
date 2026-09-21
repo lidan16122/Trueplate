@@ -1,4 +1,4 @@
-"""Rotation, theft detection, and the concurrency case the Lua script exists for."""
+"""Session renewal, expiry, revocation, and overlapping refresh requests."""
 
 import asyncio
 import uuid
@@ -9,26 +9,22 @@ from app.config import settings
 from app.stores import keys
 from app.stores.access_tokens import AccessTokenDenylist
 from app.stores.refresh_tokens import RefreshTokenStore, hash_token
-from tests.helpers import age_tombstone
 
 USER = str(uuid.uuid4())
 OTHER_USER = str(uuid.uuid4())
 
 
-
-
 class TestIssuing:
     async def test_raw_token_is_never_stored(self, store: RefreshTokenStore, redis):
         issued = await store.create_session(user_id=USER)
-
-        # The raw value must not appear as a key...
         assert await redis.exists(keys.refresh_token_key(issued.raw_token)) == 0
-        # ...but its hash must.
-        assert await redis.exists(keys.refresh_token_key(hash_token(issued.raw_token))) == 1
+        record = await redis.hgetall(keys.refresh_token_key(hash_token(issued.raw_token)))
+        assert record["user_id"] == USER
+        assert issued.raw_token not in record.values()
 
     async def test_token_is_opaque_not_a_jwt(self, store: RefreshTokenStore):
         issued = await store.create_session(user_id=USER)
-        assert issued.raw_token.count(".") != 2
+        assert issued.raw_token.count(".") == 0
         assert len(issued.raw_token) >= 40
 
     async def test_two_sessions_get_separate_families(self, store: RefreshTokenStore):
@@ -37,228 +33,162 @@ class TestIssuing:
         assert a.family_id != b.family_id
         assert a.raw_token != b.raw_token
 
-    async def test_ttl_matches_the_configured_session_length(
-        self, store: RefreshTokenStore, redis
-    ):
-        # Derived from the setting rather than restating the number: a test that
-        # repeats the constant only pins that someone typed it twice.
+    async def test_ttl_matches_the_configured_session_length(self, store, redis):
         issued = await store.create_session(user_id=USER)
         ttl = await redis.ttl(keys.refresh_token_key(hash_token(issued.raw_token)))
         assert settings.refresh_token_ttl_seconds - 60 < ttl <= settings.refresh_token_ttl_seconds
 
 
-class TestRotation:
-    async def test_rotation_returns_a_different_token(self, store: RefreshTokenStore):
+class TestRenewal:
+    async def test_repeated_refreshes_keep_the_same_session_usable(self, store, redis):
         issued = await store.create_session(user_id=USER)
-        result = await store.rotate(issued.raw_token)
-
-        assert result.status == "ok"
-        assert result.user_id == USER
-        assert result.raw_token != issued.raw_token
-
-    async def test_family_survives_rotation(self, store: RefreshTokenStore):
-        issued = await store.create_session(user_id=USER)
-        result = await store.rotate(issued.raw_token)
-        assert result.family_id == issued.family_id
-
-    async def test_old_token_is_deleted_and_tombstoned(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-        old_hash = hash_token(issued.raw_token)
-
-        await store.rotate(issued.raw_token)
-
-        assert await redis.exists(keys.refresh_token_key(old_hash)) == 0
-        tombstone = await redis.hgetall(keys.refresh_used_key(old_hash))
-        assert tombstone["family_id"] == issued.family_id
-        # The timestamp is what separates a retry from a theft later on.
-        assert float(tombstone["rotated_at"]) > 0
-
-    async def test_family_points_at_the_new_token(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-        result = await store.rotate(issued.raw_token)
-
-        current = await redis.hget(keys.refresh_family_key(issued.family_id), "current_token_hash")
-        assert current == hash_token(result.raw_token)
-
-    async def test_rotation_slides_the_expiry(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-        family_key = keys.refresh_family_key(issued.family_id)
-
-        # Simulate a session most of the way through its life.
-        await redis.expire(family_key, 60)
-        assert await redis.ttl(family_key) <= 60
-
-        await store.rotate(issued.raw_token)
-
-        # An active user is never forced to re-login.
-        assert await redis.ttl(family_key) > settings.refresh_token_ttl_seconds - 60
-
-    async def test_the_tombstone_outlives_the_session_it_came_from(
-        self, store: RefreshTokenStore, redis
-    ):
-        # Expiry slides, so an active family outlives every token rotated out of
-        # it. A tombstone kept on the session's own clock would expire first, and
-        # a stolen token replayed after that reads as merely unknown — rejected,
-        # but with the family left alive and no reuse warning for anyone to see.
-        issued = await store.create_session(user_id=USER)
-        old_hash = hash_token(issued.raw_token)
-
-        result = await store.rotate(issued.raw_token)
-
-        tombstone = await redis.ttl(keys.refresh_used_key(old_hash))
-        session = await redis.ttl(keys.refresh_token_key(hash_token(result.raw_token)))
-        assert tombstone > session
-        assert settings.refresh_reuse_tombstone_seconds - 60 < tombstone
-
-    async def test_chained_rotations_each_succeed(self, store: RefreshTokenStore):
-        issued = await store.create_session(user_id=USER)
-        token = issued.raw_token
+        before = set(await redis.keys("*"))
         for _ in range(5):
-            result = await store.rotate(token)
+            result = await store.renew(issued.raw_token)
             assert result.status == "ok"
-            token = result.raw_token
+            assert result.user_id == USER
+            assert result.family_id == issued.family_id
 
+        # Refreshing must not accumulate credentials or replay records.
+        assert set(await redis.keys("*")) == before
 
-class TestReuseGraceWindow:
-    """A replay moments after a rotation is a retry, not an attack."""
-
-    async def test_immediate_replay_is_treated_as_a_retry(self, store: RefreshTokenStore):
+    async def test_renewal_slides_every_session_expiry(self, store, redis):
         issued = await store.create_session(user_id=USER)
-        await store.rotate(issued.raw_token)
+        session_keys = [
+            keys.refresh_token_key(hash_token(issued.raw_token)),
+            keys.refresh_family_key(issued.family_id),
+            keys.refresh_user_families_key(USER),
+        ]
+        for key in session_keys:
+            await redis.expire(key, 60)
 
-        replay = await store.rotate(issued.raw_token)
+        assert (await store.renew(issued.raw_token)).status == "ok"
 
-        assert replay.status == "retry"
+        for key in session_keys:
+            ttl = await redis.ttl(key)
+            assert (
+                settings.refresh_token_ttl_seconds - 60 < ttl <= settings.refresh_token_ttl_seconds
+            )
 
-    async def test_retry_leaves_the_session_alive(self, store: RefreshTokenStore, redis):
+    @pytest.mark.parametrize("expired_part", ["token", "family"])
+    async def test_an_expired_session_cannot_be_renewed(self, store, redis, expired_part):
         issued = await store.create_session(user_id=USER)
-        rotated = await store.rotate(issued.raw_token)
+        expired_key = (
+            keys.refresh_token_key(hash_token(issued.raw_token))
+            if expired_part == "token"
+            else keys.refresh_family_key(issued.family_id)
+        )
+        await redis.expire(expired_key, 0)
 
-        await store.rotate(issued.raw_token)  # a lagging retry
+        assert (await store.renew(issued.raw_token)).status == "invalid"
+        assert await redis.exists(expired_key) == 0
 
-        assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 1
-        # And the winning token still works.
-        assert (await store.rotate(rotated.raw_token)).status == "ok"
-
-
-class TestTheftDetection:
-    async def test_replay_after_the_grace_window_is_flagged(self, store: RefreshTokenStore, redis):
+    @pytest.mark.parametrize("field", ["user_id", "current_token_hash"])
+    async def test_a_token_must_match_its_live_family(self, store, redis, field):
         issued = await store.create_session(user_id=USER)
-        await store.rotate(issued.raw_token)
-        await age_tombstone(redis, issued.raw_token)
+        await redis.hset(keys.refresh_family_key(issued.family_id), field, "another-value")
 
-        replay = await store.rotate(issued.raw_token)
+        assert (await store.renew(issued.raw_token)).status == "invalid"
 
-        assert replay.status == "reuse_detected"
-        assert replay.family_id == issued.family_id
+    async def test_existing_deployed_sessions_survive_the_change(self, store, redis):
+        # Seed the previous deployment's format, including an obsolete used-token
+        # record; migration must accept only the family's current credential.
+        current, consumed = "existing-current-credential", "previously-consumed-credential"
+        family_id = str(uuid.uuid4())
+        await redis.hset(
+            keys.refresh_token_key(hash_token(current)),
+            mapping={
+                "user_id": USER,
+                "family_id": family_id,
+                "issued_at": "2026-09-20T00:00:00+00:00",
+            },
+        )
+        await redis.hset(
+            keys.refresh_family_key(family_id),
+            mapping={
+                "user_id": USER,
+                "family_id": family_id,
+                "current_token_hash": hash_token(current),
+            },
+        )
+        await redis.hset(
+            "rt:used:" + hash_token(consumed),
+            mapping={
+                "family_id": family_id,
+                "rotated_at": "0",
+            },
+        )
 
-    async def test_replay_revokes_the_whole_family(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-        rotated = await store.rotate(issued.raw_token)
-        await age_tombstone(redis, issued.raw_token)
-
-        await store.rotate(issued.raw_token)  # the thief
-
-        # The legitimate holder's current token is gone too — that is the point.
-        assert await redis.exists(keys.refresh_token_key(hash_token(rotated.raw_token))) == 0
-        assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 0
-        assert issued.family_id not in await redis.smembers(keys.refresh_user_families_key(USER))
-
-    async def test_the_victims_live_token_stops_working(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-        rotated = await store.rotate(issued.raw_token)
-        await age_tombstone(redis, issued.raw_token)
-        await store.rotate(issued.raw_token)  # theft
-
-        assert (await store.rotate(rotated.raw_token)).status == "invalid"
-
-    async def test_other_devices_are_left_alone(self, store: RefreshTokenStore, redis):
-        phone = await store.create_session(user_id=USER, device_label="Phone")
-        laptop = await store.create_session(user_id=USER, device_label="Laptop")
-
-        await store.rotate(phone.raw_token)
-        await age_tombstone(redis, phone.raw_token)
-        await store.rotate(phone.raw_token)  # theft on the phone only
-
-        # Revoking the entire *account* on one stolen token would be a denial of
-        # service; only the compromised family goes.
-        assert (await store.rotate(laptop.raw_token)).status == "ok"
-
-    async def test_unknown_token_revokes_nothing(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-
-        result = await store.rotate("a-string-someone-made-up")
-
-        assert result.status == "invalid"
-        assert result.family_id is None
-        # Critically: the real session is untouched.
-        assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 1
+        assert (await store.renew(current)).status == "ok"
+        assert (await store.renew(consumed)).status == "invalid"
+        assert (await store.renew(current)).status == "ok"
 
 
 class TestConcurrency:
-    async def test_parallel_refreshes_produce_exactly_one_winner(self, store: RefreshTokenStore):
-        """The race the Lua check-and-swap exists to prevent.
-
-        Two tabs refreshing at once must not look like theft.
-        """
+    async def test_parallel_refreshes_all_authenticate_the_same_session(self, store, redis):
         issued = await store.create_session(user_id=USER)
 
-        results = await asyncio.gather(*(store.rotate(issued.raw_token) for _ in range(5)))
-        statuses = [r.status for r in results]
+        results = await asyncio.gather(*(store.renew(issued.raw_token) for _ in range(5)))
 
-        assert statuses.count("ok") == 1, f"expected one winner, got {statuses}"
+        assert {r.status for r in results} == {"ok"}
+        assert {r.family_id for r in results} == {issued.family_id}
+        assert (await store.renew(issued.raw_token)).status == "ok"
+        assert len(await redis.keys("rt:tok:*")) == 1
 
-    async def test_parallel_refreshes_do_not_revoke_the_session(
-        self, store: RefreshTokenStore, redis
+    @pytest.mark.parametrize("logout_first", [False, True])
+    async def test_logout_racing_renewal_never_restores_the_session(
+        self, store, redis, logout_first
     ):
         issued = await store.create_session(user_id=USER)
+        operations = [store.renew(issued.raw_token), store.revoke_by_token(issued.raw_token)]
+        if logout_first:
+            operations.reverse()
 
-        results = await asyncio.gather(*(store.rotate(issued.raw_token) for _ in range(5)))
-        winner = next(r for r in results if r.status == "ok")
+        await asyncio.gather(*operations)
 
-        # The losers must land on "retry", not "reuse_detected" — otherwise each
-        # one revokes the family and takes the winner's brand-new token with it,
-        # signing the user out for opening a second tab.
-        assert {r.status for r in results} == {"ok", "retry"}
-        assert await redis.exists(keys.refresh_token_key(hash_token(winner.raw_token))) == 1
-        assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 1
-
-    async def test_the_winning_token_can_still_be_rotated_afterwards(
-        self, store: RefreshTokenStore
-    ):
-        issued = await store.create_session(user_id=USER)
-        results = await asyncio.gather(*(store.rotate(issued.raw_token) for _ in range(5)))
-        winner = next(r for r in results if r.status == "ok")
-
-        assert (await store.rotate(winner.raw_token)).status == "ok"
+        assert (await store.renew(issued.raw_token)).status == "invalid"
+        assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 0
+        assert await redis.exists(keys.refresh_token_key(hash_token(issued.raw_token))) == 0
 
 
 class TestRevocation:
-    async def test_logout_kills_the_current_device(self, store: RefreshTokenStore):
+    async def test_logout_kills_the_current_device(self, store):
         issued = await store.create_session(user_id=USER)
         assert await store.revoke_by_token(issued.raw_token) is True
-        assert (await store.rotate(issued.raw_token)).status == "invalid"
+        assert (await store.renew(issued.raw_token)).status == "invalid"
 
-    async def test_logout_with_an_unknown_token_is_a_no_op(self, store: RefreshTokenStore):
+    async def test_logout_with_an_unknown_token_is_a_no_op(self, store):
         assert await store.revoke_by_token("nonsense") is False
 
-    async def test_revoke_all_clears_every_device(self, store: RefreshTokenStore):
+    async def test_one_device_cannot_revoke_another_users_session(self, store):
+        issued = await store.create_session(user_id=USER)
+        assert await store.revoke_family(issued.family_id, owner_id=OTHER_USER) is False
+        assert (await store.renew(issued.raw_token)).status == "ok"
+
+    async def test_revoking_a_session_leaves_other_devices_alone(self, store):
+        phone = await store.create_session(user_id=USER)
+        laptop = await store.create_session(user_id=USER)
+
+        assert await store.revoke_family(phone.family_id, owner_id=USER) is True
+        assert (await store.renew(phone.raw_token)).status == "invalid"
+        assert (await store.renew(laptop.raw_token)).status == "ok"
+
+    async def test_revoke_all_clears_every_device(self, store):
         a = await store.create_session(user_id=USER, device_label="Phone")
         b = await store.create_session(user_id=USER, device_label="Laptop")
 
         assert await store.revoke_all_for_user(USER) == 2
+        assert (await store.renew(a.raw_token)).status == "invalid"
+        assert (await store.renew(b.raw_token)).status == "invalid"
 
-        assert (await store.rotate(a.raw_token)).status == "invalid"
-        assert (await store.rotate(b.raw_token)).status == "invalid"
-
-    async def test_revoke_all_does_not_reach_other_users(self, store: RefreshTokenStore):
+    async def test_revoke_all_does_not_reach_other_users(self, store):
         mine = await store.create_session(user_id=USER)
         theirs = await store.create_session(user_id=OTHER_USER)
 
         await store.revoke_all_for_user(USER)
 
-        assert (await store.rotate(mine.raw_token)).status == "invalid"
-        assert (await store.rotate(theirs.raw_token)).status == "ok"
+        assert (await store.renew(mine.raw_token)).status == "invalid"
+        assert (await store.renew(theirs.raw_token)).status == "ok"
 
 
 class TestAccessDenylist:
@@ -267,8 +197,6 @@ class TestAccessDenylist:
         await denylist.revoke("some-jti", ttl_seconds=900)
 
         assert await denylist.is_revoked("some-jti") is False
-        # Nothing was written either: a store that records entries no reader
-        # will ever consult is just a slow leak.
         assert await redis.exists(keys.access_deny_key("some-jti")) == 0
 
     async def test_reports_revocation_when_enabled(self, redis, monkeypatch):
@@ -282,39 +210,7 @@ class TestAccessDenylist:
 
 
 @pytest.mark.parametrize("token", ["", "   ", "not-a-real-token"])
-async def test_garbage_tokens_are_simply_invalid(store: RefreshTokenStore, token: str):
-    assert (await store.rotate(token)).status == "invalid"
-
-
-class TestLogoutRacingRotation:
-    """Revoking a family while a refresh is in flight must not resurrect it.
-
-    Rotation writes the family's current token hash. If a `revoke_family` lands
-    between the token lookup and that write, an unconditional HSET recreates the
-    family holding only a token hash — no `user_id`, which is the field
-    `revoke_family` keys off and `family_belongs_to` reads. The session would
-    then outlive its own logout, unreachable by any later revoke.
-    """
-
-    async def test_rotation_does_not_recreate_a_family_revoked_mid_flight(
-        self, store: RefreshTokenStore, redis
-    ):
-        issued = await store.create_session(user_id=USER)
-
-        # Revoke first, then present the still-live token — the same ordering a
-        # logout racing an in-flight refresh produces.
-        await store.revoke_family(issued.family_id)
-        result = await store.rotate(issued.raw_token)
-
-        assert result.status != "ok", "a revoked family must not rotate"
-        assert await redis.exists(keys.refresh_family_key(issued.family_id)) == 0
-
-    async def test_no_orphan_token_survives_the_race(self, store: RefreshTokenStore, redis):
-        issued = await store.create_session(user_id=USER)
-        await store.revoke_family(issued.family_id)
-        result = await store.rotate(issued.raw_token)
-
-        # Whatever the outcome, no token may be left pointing at a family that
-        # no longer exists.
-        if getattr(result, "raw_token", None):
-            assert await redis.exists(keys.refresh_token_key(hash_token(result.raw_token))) == 0
+async def test_unknown_tokens_leave_real_sessions_usable(store, token):
+    issued = await store.create_session(user_id=USER)
+    assert (await store.renew(token)).status == "invalid"
+    assert (await store.renew(issued.raw_token)).status == "ok"

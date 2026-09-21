@@ -1,4 +1,4 @@
-"""End-to-end auth: sign-in, cookie flags, rotation, and theft detection."""
+"""End-to-end auth: sign-in, cookie flags, renewal, and revocation."""
 
 import base64
 import hashlib
@@ -13,7 +13,6 @@ from app.services.auth.google_oauth import GoogleAuthError
 from tests import fakes
 from tests.helpers import (
     ALICE,
-    age_tombstone,
     complete_onboarding,
     google_payload,
     set_cookie_header,
@@ -140,14 +139,18 @@ class TestProtectedRoutes:
 
 
 class TestRefresh:
-    async def test_refresh_issues_new_cookies(self, client, google_ok):
+    async def test_refresh_preserves_the_session_credential(self, client, google_ok):
         await sign_in(client)
         before = client.cookies[settings.refresh_cookie_name]
 
         response = await client.post(f"{API}/refresh")
 
         assert response.status_code == 200
-        assert client.cookies[settings.refresh_cookie_name] != before
+        assert client.cookies[settings.refresh_cookie_name] == before
+        assert set_cookie_names(response) == {
+            settings.access_cookie_name,
+            settings.refresh_cookie_name,
+        }
 
     async def test_refresh_without_a_cookie_is_401(self, client):
         assert (await client.post(f"{API}/refresh")).status_code == 401
@@ -158,8 +161,7 @@ class TestRefresh:
 
         assert (await client.get(f"{API}/me")).status_code == 200
 
-    async def test_concurrent_refresh_returns_409_not_401(self, client, google_ok):
-        """A losing racer must not be told its session is gone."""
+    async def test_repeated_refresh_returns_usable_cookies_every_time(self, client, google_ok):
         await sign_in(client)
         stale = client.cookies[settings.refresh_cookie_name]
 
@@ -168,31 +170,27 @@ class TestRefresh:
 
         response = await client.post(f"{API}/refresh")
 
-        # 409 tells the client to retry; 401 would sign the user out for having
-        # two tabs open.
-        assert response.status_code == 409
+        assert response.status_code == 200
+        assert (await client.get(f"{API}/me")).status_code == 200
 
-    async def test_replay_after_the_grace_window_revokes_the_session(
-        self, client, google_ok, redis
-    ):
+    async def test_expired_refresh_is_rejected(self, client, google_ok, redis):
+        from app.stores import keys
+        from app.stores.refresh_tokens import hash_token
+
         await sign_in(client)
         stale = client.cookies[settings.refresh_cookie_name]
-
-        await client.post(f"{API}/refresh")
-        await age_tombstone(redis, stale)
-        client.cookies.set(settings.refresh_cookie_name, stale, path=settings.refresh_cookie_path)
+        await redis.expire(keys.refresh_token_key(hash_token(stale)), 0)
 
         response = await client.post(f"{API}/refresh")
 
         assert response.status_code == 401
-        assert "sign in again" in response.json()["detail"].lower()
+        assert "expired" in response.json()["detail"].lower()
 
-    async def test_theft_clears_the_cookies(self, client, google_ok, redis):
+    async def test_invalid_refresh_clears_the_cookies(self, client, google_ok):
         await sign_in(client)
-        stale = client.cookies[settings.refresh_cookie_name]
-        await client.post(f"{API}/refresh")
-        await age_tombstone(redis, stale)
-        client.cookies.set(settings.refresh_cookie_name, stale, path=settings.refresh_cookie_path)
+        client.cookies.set(
+            settings.refresh_cookie_name, "invalid-token", path=settings.refresh_cookie_path
+        )
 
         response = await client.post(f"{API}/refresh")
 
@@ -308,9 +306,7 @@ class TestGoogleCredentialVerification:
 
 
 class TestServerErrorsDoNotLeakThroughSignIn:
-    async def test_an_unconfigured_server_reports_401_without_its_reason(
-        self, client, monkeypatch
-    ):
+    async def test_an_unconfigured_server_reports_401_without_its_reason(self, client, monkeypatch):
         monkeypatch.setattr(settings, "google_client_id", "")
 
         response = await client.post(f"{API}/google", json={"credential": "anything"})
@@ -363,9 +359,7 @@ class TestGoogleOAuthStart:
     Permissions API to request and no prompt to trigger.
     """
 
-    async def test_start_sends_the_browser_to_google_with_our_client_id(
-        self, client, google_token
-    ):
+    async def test_start_sends_the_browser_to_google_with_our_client_id(self, client, google_token):
         response = await client.get(f"{API}/google/start")
 
         assert response.status_code == 303
@@ -598,9 +592,7 @@ class TestGoogleOAuthCallback:
         assert response.status_code == 303
         assert response.headers["location"] == "/signin?error=google"
 
-    async def test_the_exchange_proves_both_the_secret_and_the_verifier(
-        self, client, google_token
-    ):
+    async def test_the_exchange_proves_both_the_secret_and_the_verifier(self, client, google_token):
         seen: list[httpx.Request] = []
         google_token(fakes.google_token_transport(seen=seen))
         state = await self._start(client)
