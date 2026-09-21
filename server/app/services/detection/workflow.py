@@ -16,6 +16,7 @@ from app.services.detection import barcode as barcode_service
 from app.services.detection import cache as detection_cache
 from app.services.detection import imaging
 from app.services.detection.detector import DetectionService
+from app.services.grounding import GroundedResponseService
 from app.services.nutrition import OpenFoodFactsClient
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,7 @@ async def detect_photo(
     raw: bytes,
     note: str | None,
     meal_type: MealType | None,
+    grounding: GroundedResponseService | None = None,
 ) -> FoodDetectionResponse:
     # Hashed before downscaling, so the content address is the bytes the user
     # actually sent. Hashing the processed copy would make it depend on our own
@@ -42,7 +44,7 @@ async def detect_photo(
     cached = await detection_cache.read(db, cache_key)
     if cached is not None:
         await transaction.commit(db)
-        return cached
+        return await _ground_response(db, cached, cache_key, grounding)
 
     # Pillow is CPU-bound and blocking; on a single worker it would otherwise
     # stall every other in-flight request while a phone photo is resized.
@@ -64,19 +66,20 @@ async def detect_photo(
     # One commit covers both the cache row and anything the resolver wrote back
     # to `foods` during this request.
     await transaction.commit(db)
-    return response
+    return await _ground_response(db, response, cache_key, grounding)
 
 
 async def detect_text(
     db: AsyncSession,
     detector: DetectionService,
     payload: TextDetectionRequest,
+    grounding: GroundedResponseService | None = None,
 ) -> FoodDetectionResponse:
     cache_key = detection_cache.hash_text(payload.description, payload.meal_type)
     cached = await detection_cache.read(db, cache_key)
     if cached is not None:
         await transaction.commit(db)
-        return cached
+        return await _ground_response(db, cached, cache_key, grounding)
 
     response = await detector.detect_text(payload.description, payload.meal_type)
 
@@ -85,6 +88,24 @@ async def detect_text(
     if not response.is_provisional:
         await detection_cache.write(db, cache_key, DetectionMethod.TEXT, response)
     await transaction.commit(db)
+    return await _ground_response(db, response, cache_key, grounding)
+
+
+async def _ground_response(
+    db: AsyncSession,
+    response: FoodDetectionResponse,
+    cache_key: str,
+    grounding: GroundedResponseService | None,
+) -> FoodDetectionResponse:
+    """Recognition is already committed, so generation failure cannot lose a resolved meal."""
+    if grounding is None or response.grounded_response is not None:
+        return response
+    grounded = await grounding.generate(response)
+    response = response.model_copy(update={"grounded_response": grounded})
+    # A fallback is returned but never frozen into the cache; retry only needs this last pass.
+    if grounded.status == "generated" and not response.is_provisional:
+        await detection_cache.write(db, cache_key, response.kind, response)
+        await transaction.commit(db)
     return response
 
 

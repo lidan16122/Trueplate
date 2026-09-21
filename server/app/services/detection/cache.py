@@ -25,7 +25,9 @@ from app.db.base import as_utc
 from app.db.repositories import detections as repository
 from app.models.enums import DetectionMethod, MealType
 from app.schemas.detection import FoodDetectionResponse
+from app.schemas.grounding import GroundedNutritionResponse
 from app.services.detection.detector import PROMPT_FINGERPRINT
+from app.services.grounding.service import cache_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -111,13 +113,24 @@ async def read(db: AsyncSession, cache_key: str) -> FoodDetectionResponse | None
         return None
 
     try:
-        response = FoodDetectionResponse.model_validate(row.payload)
+        # A stale explanation must not invalidate expensive, still-valid recognition.
+        response = FoodDetectionResponse.model_validate({**row.payload, "grounded_response": None})
     except ValidationError:
         logger.info("Discarding unparseable cached detection %s", cache_key[:12])
         await repository.delete(db, row)
         return None
 
-    # Flag it, so the client can say the meal was recognised without a new call.
+    if row.payload.get("_grounding_fingerprint") == await cache_fingerprint():
+        try:
+            grounded = GroundedNutritionResponse.model_validate(
+                row.payload.get("grounded_response")
+            )
+            if grounded.status == "generated":
+                response.grounded_response = grounded
+        except ValidationError:
+            logger.info("Discarding unparseable grounded response %s", cache_key[:12])
+
+    # Recognition was reused; a stale grounded summary can still require its own model call.
     return response.model_copy(update={"cached": True})
 
 
@@ -128,4 +141,7 @@ async def write(
     response: FoodDetectionResponse,
 ) -> None:
     """Store a completed detection. Never raises — a cache is an optimisation."""
-    await repository.write_payload(db, cache_key, kind, response.model_dump(mode="json"))
+    payload = response.model_dump(mode="json")
+    if response.grounded_response is not None and response.grounded_response.status == "generated":
+        payload["_grounding_fingerprint"] = await cache_fingerprint()
+    await repository.write_payload(db, cache_key, kind, payload)

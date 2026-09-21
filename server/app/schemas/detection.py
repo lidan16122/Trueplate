@@ -17,6 +17,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from app.models.enums import DetectionMethod, MealType
+from app.schemas.grounding import GroundedNutritionResponse
 
 Preparation = Literal["raw", "grilled", "fried", "baked", "boiled", "steamed", "roasted", "unknown"]
 
@@ -310,6 +311,9 @@ class FoodDetectionResponse(BaseModel):
     # but not caching, so resubmitting can produce a fresh reading.
     is_provisional: bool = False
     notes: str | None = None
+
+    # Additive for older clients and cached payloads; barcode detection does not call Claude.
+    grounded_response: GroundedNutritionResponse | None = None
 
 
 class TextDetectionRequest(BaseModel):

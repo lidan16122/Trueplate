@@ -13,6 +13,7 @@ from app.db.models import User
 from app.db.repositories.users import get_user
 from app.db.session import get_db
 from app.services.detection.detector import DetectionService
+from app.services.grounding import GroundedResponseService
 from app.services.nutrition import (
     NutritionResolver,
     OpenFoodFactsClient,
@@ -86,6 +87,13 @@ def get_detection_service(resolver: Resolver) -> DetectionService:
 
 
 Detector = Annotated[DetectionService, Depends(get_detection_service)]
+
+
+def get_grounded_response_service() -> GroundedResponseService:
+    return GroundedResponseService()
+
+
+Grounding = Annotated[GroundedResponseService, Depends(get_grounded_response_service)]
 
 
 async def get_token_claims(request: Request, denylist: Denylist) -> AccessTokenClaims:

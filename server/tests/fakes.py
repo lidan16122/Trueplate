@@ -48,6 +48,12 @@ class FakeAnthropic:
         self.calls: list[dict[str, Any]] = []
         self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return None
+
     async def _create(self, **kwargs: Any) -> Any:
         # `messages` is one list the service appends to across the whole loop, so
         # recording `kwargs` as handed over stores a live reference: every call
@@ -57,7 +63,10 @@ class FakeAnthropic:
         self.calls.append({**kwargs, "messages": list(kwargs.get("messages", []))})
         if not self._responses:
             raise AssertionError("FakeAnthropic ran out of scripted responses")
-        return self._responses.pop(0)
+        result = self._responses.pop(0)
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 def food_result(**overrides: Any) -> dict[str, Any]:
