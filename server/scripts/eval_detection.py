@@ -1,14 +1,15 @@
-"""Check whole-dish grouping with fresh model calls and an in-memory nutrition cache.
+"""Check food grouping with fresh model calls and an in-memory nutrition cache.
 
-Run ``python -m scripts.eval_detection --runs 3`` for the text cases. Add
-``--photo path/to/two-slices.jpg`` to check the original pizza photo as well.
+Run ``python -m scripts.eval_detection --runs 3`` for the text cases. Use
+``--photo path/to/meal.jpg --case topped_plate`` to check a photo against that
+case's expected foods instead. Photos default to the two-slice pizza case.
 This uses the configured paid model and public nutrition APIs, never the app database.
 """
 
 import argparse
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import httpx
@@ -23,6 +24,8 @@ from app.schemas.detection import FoodDetectionResponse
 from app.services.detection import imaging
 from app.services.detection.detector import PROMPT_FINGERPRINT, DetectionError, DetectionService
 from app.services.nutrition import NutritionResolver, OpenFoodFactsClient, UsdaClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,39 @@ CASES = [
         "rice_chicken", "Cooked rice beside a separate grilled chicken breast", ("rice", "chicken")
     ),
     Case("pasta_beef", "Cooked pasta beside a separate portion of grilled beef", ("pasta", "beef")),
+    # Everyday descriptions should not need the word "separate" to preserve plate items.
+    Case(
+        "plate_with_sauce",
+        "Rice with cooked chicken, tomato sauce and roasted potatoes",
+        ("rice", "chicken", "sauce", "potato"),
+    ),
+    Case("chicken_rice", "Chicken with rice", ("chicken", "rice")),
+    Case("chicken_sauce", "Grilled chicken breast with tomato sauce", ("chicken", "sauce")),
+    Case(
+        "topped_plate",
+        "A plate of rice topped with cooked chicken and tomato sauce, with roasted potatoes",
+        ("rice", "chicken", "sauce|gravy", "potato"),
+    ),
+    Case(
+        "rice_bowl",
+        "A chicken and rice bowl with roasted potatoes and garlic sauce",
+        ("rice", "chicken", "potato", "sauce"),
+    ),
+    Case(
+        "burger",
+        "A hamburger with a bun, beef patty, cheese, lettuce and tomato",
+        ("burger",),
+    ),
+    Case(
+        "burger_sides",
+        "A hamburger with fries and ketchup",
+        ("burger", "fries", "ketchup"),
+    ),
+    Case(
+        "burrito",
+        "A beef burrito with rice, beans, cheese and salsa wrapped in a tortilla",
+        ("burrito",),
+    ),
     Case(
         "lasagna",
         "A portion of beef lasagna with pasta, ricotta, tomato sauce and cheese baked together",
@@ -65,9 +101,20 @@ def problems(case: Case, response: FoodDetectionResponse) -> list[str]:
     failures = []
     if len(labels) != len(case.foods):
         failures.append(f"expected {len(case.foods)} foods, got {len(labels)}")
+    matched_indices = []
     for food in case.foods:
-        if not any(food in label for label in labels):
+        matching = [
+            index
+            for index, label in enumerate(labels)
+            if any(name in label for name in food.split("|"))
+        ]
+        if not matching:
             failures.append(f"missing {food}")
+        else:
+            matched_indices.append(matching[0])
+    # A bundled "chicken and potatoes" label cannot satisfy two expected entries.
+    if len(set(matched_indices)) != len(matched_indices):
+        failures.append("bundled foods that should have separate portions")
     if response.is_provisional:
         failures.append("inconsistent inventory")
     if len(response.items) == 1:
@@ -85,7 +132,9 @@ async def evaluate(runs: int, selected: str | None, photo: Path | None) -> int:
     cases = [case for case in CASES if selected is None or case.name == selected]
     prepared = imaging.prepare_image(photo.read_bytes()) if photo is not None else None
     if prepared is not None:
-        cases.append(Case("photo", "", ("pizza",), slices=2))
+        expected = next(case for case in CASES if case.name == (selected or "pizza"))
+        # A text case's explicit grams say nothing about the photographed portion.
+        cases = [replace(expected, name=f"photo_{expected.name}", grams=None)]
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     failed, total = 0, 0
     print(
@@ -113,7 +162,7 @@ async def evaluate(runs: int, selected: str | None, photo: Path | None) -> int:
                     try:
                         response = (
                             await service.detect_photo(prepared)
-                            if case.name == "photo" and prepared is not None
+                            if prepared is not None
                             else await service.detect_text(case.text)
                         )
                     except DetectionError as error:
@@ -128,6 +177,15 @@ async def evaluate(runs: int, selected: str | None, photo: Path | None) -> int:
                         f"{verdict} {case.name} {run}/{runs}: {labels}; {'; '.join(errors)}",
                         flush=True,
                     )
+                    for item in response.items:
+                        logger.info(
+                            "%s: %sg; terms=%s; matched=%s; source=%s",
+                            item.detected.label,
+                            item.detected.estimated_grams,
+                            item.detected.search_terms,
+                            item.matched.name if item.matched else None,
+                            item.matched.source if item.matched else None,
+                        )
     finally:
         await engine.dispose()
     print(f"{total - failed}/{total} grouping checks passed", flush=True)
@@ -145,6 +203,7 @@ def main() -> int:
     logging.basicConfig(level=logging.WARNING)
     if args.verbose:
         logging.getLogger("app.services.detection.detector").setLevel(logging.INFO)
+        logger.setLevel(logging.INFO)
     if not settings.anthropic_api_key or "..." in settings.anthropic_api_key:
         parser.error("configure ANTHROPIC_API_KEY before running the live evaluation")
     if args.photo is not None and not args.photo.is_file():
