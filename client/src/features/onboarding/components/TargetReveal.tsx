@@ -27,11 +27,11 @@ export function TargetReveal() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-surface">
-      <main className="mx-auto flex w-full max-w-[900px] flex-1 flex-col gap-10 px-7 py-12 md:px-12 md:py-16">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-[900px] flex-1 flex-col gap-10 px-7 py-12 md:px-12 md:py-16">
         <div className="flex flex-col gap-3">
           <Eyebrow>Your daily target</Eyebrow>
-          <div className="flex items-baseline gap-3">
-            <Stat value={targetCalories.toLocaleString()} size={64} className="md:!text-[88px]" />
+          <div className="flex flex-wrap items-baseline gap-3">
+            <Stat value={targetCalories.toLocaleString()} size={52} className="md:!text-target" />
             <span className="text-lead text-subtle">kcal per day</span>
           </div>
           {targets?.summary && (

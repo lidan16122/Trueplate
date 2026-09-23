@@ -11,7 +11,7 @@ export function Stat({
   return (
     <div
       className={`tabular font-mono leading-none font-medium tracking-[-0.04em] text-ink ${className}`}
-      style={{ fontSize: size }}
+      style={{ fontSize: `${size / 16}rem` }}
     >
       {value}
     </div>

@@ -84,16 +84,26 @@
      component is a decision made twice, and the scale drifts one screen at a
      time. Named for the role rather than the pixel count, so a change to the
      scale does not turn every name into a lie. */
-  --text-micro: 11px; /* macro sub-labels */
-  --text-label: 12px; /* uppercase eyebrows */
-  --text-caption: 13px; /* secondary rows */
-  --text-body: 14px; /* default UI text */
-  --text-item: 15px; /* the name of one row in a list */
-  --text-lead: 16px; /* emphasised body */
-  --text-entry: 17px; /* an editable figure, and the number beside it */
-  --text-input: 21px; /* the mono figure inside a stepper */
-  --text-title: 19px; /* card titles, brand mark */
-  --text-figure: 34px; /* the big calorie number */
+  /* Relative sizes let browser preferences and the accessibility controls scale the same type. */
+  --text-micro: 0.6875rem; /* macro sub-labels */
+  --text-label: 0.75rem; /* uppercase eyebrows */
+  --text-caption: 0.8125rem; /* secondary rows */
+  --text-body: 0.875rem; /* default UI text */
+  --text-item: 0.9375rem; /* the name of one row in a list */
+  --text-lead: 1rem; /* emphasised body */
+  --text-entry: 1.0625rem; /* an editable figure, and the number beside it */
+  --text-input: 1.3125rem; /* the mono figure inside a stepper */
+  --text-title: 1.1875rem; /* card titles, brand mark */
+  --text-section: 1.125rem;
+  --text-heading-small: 1.375rem;
+  --text-heading: 1.5rem;
+  --text-heading-large: 1.75rem;
+  --text-intro: 1.875rem;
+  --text-figure: 2.125rem; /* the big calorie number */
+  --text-hero: 2.375rem;
+  --text-hero-large: 2.5rem;
+  --text-hero-wide: 3.25rem;
+  --text-target: 5.5rem;
 
   /* --- radii --- */
   --radius-bar: 3px;
@@ -105,6 +115,143 @@
   --radius-lg: 16px;
   --radius-xl: 18px;
   --radius-2xl: 22px;
+}
+
+html[data-text-size="125"] { font-size: 125%; }
+html[data-text-size="150"] { font-size: 150%; }
+
+/* Override the existing palette so both light screens and the camera's dark surfaces adapt. */
+html[data-high-contrast="true"] {
+  --color-muted: #343434;
+  --color-subtle: #454545;
+  --color-faint: #505050;
+  --color-on-dark: #f0f0f0;
+  --color-on-dark-dim: #d8d8d8;
+  --color-on-dark-faint: #c2c2c2;
+  --color-line-dark: #969696;
+  --color-line: #767676;
+  --color-line-2: #767676;
+  --color-line-soft: #767676;
+  --color-line-card: #767676;
+  --color-line-control: #767676;
+  --color-hairline: #767676;
+  --color-hairline-strong: #767676;
+  --color-icon-faint: #737373;
+  --color-accent: #205239;
+  --color-warn: #805515;
+}
+
+/* A two-tone ring remains visible on white forms and dark camera controls alike. */
+:focus-visible {
+  outline: 3px solid var(--color-ink);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--color-surface);
+}
+
+#main-content { scroll-margin-block: 1rem; }
+#main-content:focus { outline: none; box-shadow: none; }
+
+html[data-highlight-links="true"] a[href] {
+  text-decoration: underline;
+  text-decoration-thickness: 0.12em;
+  text-underline-offset: 0.2em;
+}
+
+.skip-to-content {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 60;
+  max-width: calc(100% - 1.5rem);
+  transform: translateY(calc(-100% - 1.5rem));
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  padding: 0.75rem 1rem;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+
+.skip-to-content:focus { transform: translateY(0); }
+
+.accessibility-launcher {
+  position: fixed;
+  z-index: 40;
+  right: max(1rem, env(safe-area-inset-right));
+  /* Leave the mobile save and add-food bars available beneath the launcher. */
+  bottom: calc(10rem + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.625rem;
+  min-width: 3rem;
+  min-height: 3rem;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  padding: 0.75rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--color-ink) 15%, transparent);
+  font-size: var(--text-caption);
+  font-weight: 600;
+}
+
+.accessibility-launcher:hover { background: var(--color-wash); }
+
+.accessibility-panel {
+  position: fixed;
+  inset: auto 0.5rem max(0.5rem, env(safe-area-inset-bottom)) auto;
+  width: min(25rem, calc(100% - 1rem));
+  max-width: none;
+  max-height: calc(100dvh - 2rem - env(safe-area-inset-bottom));
+  margin: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-2xl);
+  padding: 1.25rem;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: 0 16px 64px color-mix(in srgb, var(--color-ink) 20%, transparent);
+}
+
+.accessibility-panel::backdrop {
+  background: color-mix(in srgb, var(--color-ink) 40%, transparent);
+}
+
+@media (min-width: 48rem) {
+  /* Desktop forms put their primary action at bottom right. Keep this control on the opposite side. */
+  .accessibility-launcher {
+    left: max(1.5rem, env(safe-area-inset-left));
+    right: auto;
+    bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+  .accessibility-panel { left: 1.5rem; right: auto; bottom: 1.5rem; }
+}
+
+/* Preserve completion events while removing perceptible movement, including smooth scrolling. */
+html[data-reduce-motion="true"] *,
+html[data-reduce-motion="true"] *::before,
+html[data-reduce-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; box-shadow: none; }
+  .accessibility-panel button[aria-pressed="true"],
+  .accessibility-panel button[aria-checked="true"] { outline: 2px solid Highlight; }
 }
 
 /* Locks digits to a single advance width.

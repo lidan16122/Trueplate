@@ -28,20 +28,20 @@ export function NumberStepper({
   onStep: (direction: 1 | -1) => void;
 }) {
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="grid w-full max-w-[16rem] grid-cols-[44px_minmax(0,1fr)_44px] items-center gap-1.5">
       <StepButton onClick={() => onStep(-1)} label={`Decrease ${label}`}>
         −
       </StepButton>
-      <div className="flex w-[92px] items-baseline justify-center gap-1.5">
+      <div className="flex min-w-0 items-baseline justify-center gap-1.5">
         <input
           inputMode="decimal"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onBlur={onCommit}
           aria-label={label}
-          className="tabular w-[52px] border-b border-line-control bg-transparent px-0.5 pb-[3px] text-right font-mono text-input text-ink outline-none focus:border-accent"
+          className="tabular min-w-0 w-[5.5ch] border-b border-line-control bg-transparent px-0.5 pb-[3px] text-right font-mono text-input text-ink outline-none focus:border-accent"
         />
-        <span className="text-label text-faint">{unit}</span>
+        <span className="shrink-0 text-label text-faint">{unit}</span>
       </div>
       <StepButton onClick={() => onStep(1)} label={`Increase ${label}`}>
         +
@@ -64,7 +64,7 @@ function StepButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-line-control text-[19px] text-ink transition-colors hover:bg-wash"
+      className="flex size-[44px] flex-none items-center justify-center rounded-full border border-line-control text-title text-ink transition-colors hover:bg-wash"
     >
       {children}
     </button>
