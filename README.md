@@ -286,8 +286,9 @@ a refresh conflict.
 - Photos are sent as JPEG overviews with a **1,024 px** maximum edge and quality **88**.
   Requested crops use the original image, capped separately at **768 px**, without enlargement.
   Configure `DETECT_IMAGE_MAX_EDGE_PX`, `DETECT_IMAGE_CROP_MAX_EDGE_PX`, and
-  `DETECT_IMAGE_JPEG_QUALITY` in the server environment. The smaller overview is a candidate
-  pending real-photo accuracy checks; see the [evaluation and rollout notes](docs/image-token-optimization-plan.md).
+  `DETECT_IMAGE_JPEG_QUALITY` in the server environment. The smaller overview retained all foods
+  in three runs on the supplied mixed-meal photo; broader accuracy remains unverified. See the
+  [evaluation and rollout notes](docs/image-token-optimization-plan.md).
 - Uploads default to an **8 MiB** limit. Use JPEG, PNG, or WebP; HEIC/HEIF decoding depends
   on image-library support in the runtime.
 

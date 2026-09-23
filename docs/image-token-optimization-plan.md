@@ -1,6 +1,6 @@
 # Reduce photo input tokens
 
-Planned and implemented on 2026-09-23. No live model calls were made.
+Planned, implemented, and evaluated on a supplied meal photo on 2026-09-23.
 
 ## Implementation and rollout status
 
@@ -15,10 +15,11 @@ original-byte image hash still groups logged entries. Existing overrides in
 Set `DETECT_IMAGE_MAX_EDGE_PX=1568` to restore the previous overview dimensions;
 this retains the new original-image crop behavior.
 
-No evaluation photos were available. The 1024 default is therefore a candidate in
-a **draft PR**, not an accuracy-validated production recommendation. Complete the
-real-photo comparison below before merging; choose 1280 or retain 1568 if needed.
-The original accuracy gate remains outstanding. No deployed configuration changed.
+The supplied mixed-meal photo passed all nine grouping checks: three runs each at
+1568, 1280, and 1024 pixels. The 1024 default is retained for review based on this
+limited comparison. Broader photo coverage and measured portion weights remain
+outstanding; one image does not establish general recognition or mass accuracy.
+No deployed configuration changed.
 
 The evaluation script now exports dimensions, encoded bytes, visual-token estimates,
 recognition and grounding usage separately, combined token totals, zoom/repair counts,
@@ -31,6 +32,51 @@ Validation: **429 passed, 1 skipped** in the full server suite; Ruff passed. Rea
 Pillow tests verify the 4:3 token table below at quality 88 and 85, metadata stripping,
 orientation, small images, crop limits, and original detail across a full tool loop.
 These are preprocessing and integration checks, not food-recognition accuracy tests.
+
+## Live evaluation: supplied mixed-meal photo
+
+Evaluated `IMG_2767.JPEG` (1536 x 2048, 680,465 bytes) against code commit
+`28fa3a4`, using `claude-opus-5`, medium effort, prompt fingerprint
+`727f32c78a7b14b7`, quality 88, and the same 768-pixel original-crop policy for every
+size. The photo was used from its local path and is not committed. Its SHA-256 is
+`0cb39c32c88ba33516272077476ee139acf07687ad97f9f860bd8f422780446d`.
+The [complete run report](image-token-evaluation-img2767.json) retains all attempts.
+
+The expected categories, selected before running the model, were rice, chicken,
+potato, and sauce/gravy. The photo case checks those labels and separate entries;
+it does not assert the recipe or any of the text case's explicit weights. Each
+run included nutrition retrieval and the grounded explanation, using an in-memory
+database and bypassing the completed-detection cache.
+
+| Maximum edge | Encoded bytes | Visual-token estimate | Grouping passed | Repair turns | Mean total input | Mean output | Mean seconds |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1568 | 349,809 | 2352 | 3/3 | 1 | 20,988 | 754.0 | 22.67 |
+| 1280 | 250,675 | 1610 | 3/3 | 3 | 29,648.7 | 856.0 | 20.43 |
+| 1024 | 171,656 | 1036 | 3/3 | 1 | 19,251 | 776.7 | 18.24 |
+
+All final results were non-provisional, all foods resolved to nutrition records,
+and all grounded explanations succeeded. No run requested a zoom. That leaves
+live zoom behavior untested on this photo; deterministic integration tests cover
+the original-image crop path.
+
+Compared with 1568, the 1024 overview has **56.0% fewer calculated visual tokens**
+and **50.9% fewer encoded bytes**. Mean complete input usage was **8.3% lower** in
+these runs, including detection, repairs, grounding, and cached input categories.
+Mean output usage increased from 754.0 to 776.7 tokens. The large shared prompt/tool
+prefix and extra calls explain why overview savings do not equal total savings.
+
+The middle size needed a repair on every run and consumed more complete input
+than either other size. With only three runs per size, this is an observed result,
+not proof that the resolution caused the repair rate. Runs were serial in descending
+size order, and the first request paid for a cold prompt cache while later requests
+reused it. Cache write/read categories are preserved in the report; the input and
+timing comparisons must not be presented as a controlled dollar-cost benchmark.
+
+The 1024 runs estimated rice at 210-250 g versus 250 g in each 1568 run; chicken
+and potato estimates also varied. There are no weighed portions, so preserving
+the four food categories cannot establish which mass estimates were more accurate.
+Keep quality 88 and the proposed 1024 overview; evaluate additional meals before
+claiming broad accuracy or savings. A 1280 fallback did not improve this sample.
 
 ## Running the comparison
 
@@ -103,7 +149,7 @@ be recorded during evaluation.
   separate text-only Claude call. Detection's current spend log does not include
   that call. Barcode lookup uses no model and needs the original fine detail.
 
-## Implementation sequence
+## Original implementation sequence
 
 1. **Measure the current path.** Extend the existing evaluation workflow to report
    original/prepared dimensions and bytes, image-token estimates, total input and
@@ -160,9 +206,9 @@ nutrition schema constraints intact: Claude supplies food identity and mass;
 nutrition continues to come from database records. The real-photo evaluation uses
 an isolated evaluation database, not the probe's configured database write-backs.
 
-The fixtures contain recorded nutrition responses, not a representative
-meal-photo dataset. Live accuracy and measured API savings remain unverified until
-that photo evaluation is performed.
+The fixtures contain recorded nutrition responses, not a representative meal-photo
+dataset. The supplied photo provides the limited live evidence above; broader
+recognition accuracy, weighed portions, and controlled billing comparisons remain open.
 
 ## Other cost-saving options
 
