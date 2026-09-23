@@ -1,0 +1,487 @@
+{
+  "model": "claude-opus-5",
+  "effort": "medium",
+  "prompt": "727f32c78a7b14b7",
+  "preprocessing": "original-crops-v1",
+  "crop_max_edge": 768,
+  "images_only": false,
+  "profiles": [
+    {
+      "max_edge": 1568,
+      "jpeg_quality": 88,
+      "runs": [
+        {
+          "case": "photo_topped_plate",
+          "run": 1,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "steamed basmati rice",
+              "grams": 250.0
+            },
+            {
+              "label": "chicken drumstick and pulled chicken pieces",
+              "grams": 150.0
+            },
+            {
+              "label": "potato slices cooked in masala",
+              "grams": 100.0
+            },
+            {
+              "label": "thick brown curry masala sauce",
+              "grams": 60.0
+            }
+          ],
+          "seconds": 17.953,
+          "detection": {
+            "input": 2499,
+            "output": 632,
+            "cache_read": 0,
+            "cache_write": 11104,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "grounding": {
+            "input": 2327,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 15930,
+          "total_output": 716
+        },
+        {
+          "case": "photo_topped_plate",
+          "run": 2,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "steamed basmati rice",
+              "grams": 250.0
+            },
+            {
+              "label": "chicken drumstick and pulled chicken in masala",
+              "grams": 140.0
+            },
+            {
+              "label": "potato slices cooked in masala",
+              "grams": 110.0
+            },
+            {
+              "label": "brown curry masala sauce",
+              "grams": 60.0
+            }
+          ],
+          "seconds": 14.733,
+          "detection": {
+            "input": 2499,
+            "output": 602,
+            "cache_read": 11104,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "grounding": {
+            "input": 2319,
+            "output": 81,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 15922,
+          "total_output": 683
+        },
+        {
+          "case": "photo_topped_plate",
+          "run": 3,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "basmati rice",
+              "grams": 250.0
+            },
+            {
+              "label": "chicken",
+              "grams": 150.0
+            },
+            {
+              "label": "potato",
+              "grams": 120.0
+            },
+            {
+              "label": "curry masala sauce",
+              "grams": 70.0
+            }
+          ],
+          "seconds": 35.312,
+          "detection": {
+            "input": 5475,
+            "output": 779,
+            "cache_read": 11104,
+            "cache_write": 12246,
+            "turns": 2,
+            "zooms": 0,
+            "repairs": 1
+          },
+          "grounding": {
+            "input": 2287,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 31112,
+          "total_output": 863
+        }
+      ],
+      "original": {
+        "width": 1536,
+        "height": 2048,
+        "bytes": 680465,
+        "visual_tokens": 4070
+      },
+      "prepared": {
+        "width": 1176,
+        "height": 1568,
+        "bytes": 349809,
+        "visual_tokens": 2352
+      }
+    },
+    {
+      "max_edge": 1280,
+      "jpeg_quality": 88,
+      "runs": [
+        {
+          "case": "photo_topped_plate",
+          "run": 1,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "white rice",
+              "grams": 250.0
+            },
+            {
+              "label": "chicken pieces",
+              "grams": 150.0
+            },
+            {
+              "label": "potato",
+              "grams": 100.0
+            },
+            {
+              "label": "curry masala sauce",
+              "grams": 70.0
+            }
+          ],
+          "seconds": 25.994,
+          "detection": {
+            "input": 3995,
+            "output": 765,
+            "cache_read": 11104,
+            "cache_write": 12247,
+            "turns": 2,
+            "zooms": 0,
+            "repairs": 1
+          },
+          "grounding": {
+            "input": 2303,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 29649,
+          "total_output": 849
+        },
+        {
+          "case": "photo_topped_plate",
+          "run": 2,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "white rice",
+              "grams": 250.0
+            },
+            {
+              "label": "chicken pieces",
+              "grams": 150.0
+            },
+            {
+              "label": "potato",
+              "grams": 90.0
+            },
+            {
+              "label": "curry masala sauce",
+              "grams": 70.0
+            }
+          ],
+          "seconds": 18.09,
+          "detection": {
+            "input": 3993,
+            "output": 778,
+            "cache_read": 23351,
+            "cache_write": 0,
+            "turns": 2,
+            "zooms": 0,
+            "repairs": 1
+          },
+          "grounding": {
+            "input": 2309,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 29653,
+          "total_output": 862
+        },
+        {
+          "case": "photo_topped_plate",
+          "run": 3,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "white rice",
+              "grams": 250.0
+            },
+            {
+              "label": "chicken pieces",
+              "grams": 150.0
+            },
+            {
+              "label": "potato",
+              "grams": 90.0
+            },
+            {
+              "label": "curry masala sauce",
+              "grams": 70.0
+            }
+          ],
+          "seconds": 17.205,
+          "detection": {
+            "input": 4008,
+            "output": 773,
+            "cache_read": 23351,
+            "cache_write": 0,
+            "turns": 2,
+            "zooms": 0,
+            "repairs": 1
+          },
+          "grounding": {
+            "input": 2285,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 29644,
+          "total_output": 857
+        }
+      ],
+      "original": {
+        "width": 1536,
+        "height": 2048,
+        "bytes": 680465,
+        "visual_tokens": 4070
+      },
+      "prepared": {
+        "width": 960,
+        "height": 1280,
+        "bytes": 250675,
+        "visual_tokens": 1610
+      }
+    },
+    {
+      "max_edge": 1024,
+      "jpeg_quality": 88,
+      "runs": [
+        {
+          "case": "photo_topped_plate",
+          "run": 1,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "steamed basmati rice",
+              "grams": 250.0
+            },
+            {
+              "label": "curried chicken pieces (drumstick and thigh meat)",
+              "grams": 140.0
+            },
+            {
+              "label": "potato cooked in curry",
+              "grams": 90.0
+            },
+            {
+              "label": "thick onion masala curry sauce",
+              "grams": 60.0
+            }
+          ],
+          "seconds": 14.055,
+          "detection": {
+            "input": 1183,
+            "output": 649,
+            "cache_read": 11104,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "grounding": {
+            "input": 2313,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 14600,
+          "total_output": 733
+        },
+        {
+          "case": "photo_topped_plate",
+          "run": 2,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "steamed basmati rice",
+              "grams": 210.0
+            },
+            {
+              "label": "bone-in chicken pieces in masala",
+              "grams": 130.0
+            },
+            {
+              "label": "potato pieces cooked in curry",
+              "grams": 90.0
+            },
+            {
+              "label": "brown masala curry sauce",
+              "grams": 70.0
+            }
+          ],
+          "seconds": 14.031,
+          "detection": {
+            "input": 1183,
+            "output": 638,
+            "cache_read": 11104,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "grounding": {
+            "input": 2330,
+            "output": 84,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 14617,
+          "total_output": 722
+        },
+        {
+          "case": "photo_topped_plate",
+          "run": 3,
+          "errors": [],
+          "provisional": false,
+          "unresolved": 0,
+          "grounding_status": "generated",
+          "foods": [
+            {
+              "label": "basmati rice",
+              "grams": 250.0
+            },
+            {
+              "label": "curry chicken pieces",
+              "grams": 130.0
+            },
+            {
+              "label": "potato",
+              "grams": 90.0
+            },
+            {
+              "label": "curry masala sauce",
+              "grams": 70.0
+            }
+          ],
+          "seconds": 26.636,
+          "detection": {
+            "input": 2860,
+            "output": 790,
+            "cache_read": 11104,
+            "cache_write": 12251,
+            "turns": 2,
+            "zooms": 0,
+            "repairs": 1
+          },
+          "grounding": {
+            "input": 2321,
+            "output": 85,
+            "cache_read": 0,
+            "cache_write": 0,
+            "turns": 1,
+            "zooms": 0,
+            "repairs": 0
+          },
+          "total_input": 28536,
+          "total_output": 875
+        }
+      ],
+      "original": {
+        "width": 1536,
+        "height": 2048,
+        "bytes": 680465,
+        "visual_tokens": 4070
+      },
+      "prepared": {
+        "width": 768,
+        "height": 1024,
+        "bytes": 171656,
+        "visual_tokens": 1036
+      }
+    }
+  ]
+}

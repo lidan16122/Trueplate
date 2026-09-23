@@ -14,7 +14,6 @@ from app.models.enums import DetectionMethod, MealType
 from app.schemas.detection import FoodDetectionResponse, TextDetectionRequest
 from app.services.detection import barcode as barcode_service
 from app.services.detection import cache as detection_cache
-from app.services.detection import imaging
 from app.services.detection.detector import DetectionService
 from app.services.grounding import GroundedResponseService
 from app.services.nutrition import OpenFoodFactsClient
@@ -30,14 +29,8 @@ async def detect_photo(
     meal_type: MealType | None,
     grounding: GroundedResponseService | None = None,
 ) -> FoodDetectionResponse:
-    # Hashed before downscaling, so the content address is the bytes the user
-    # actually sent. Hashing the processed copy would make it depend on our own
-    # resize settings, and every tweak to those would silently empty the cache.
-    #
-    # Two derived values, deliberately: `image_hash` travels to the client and
-    # into `food_entries` as the grouping key for one photo's entries, while the
-    # cache key additionally folds in the model and effort so a config change
-    # cannot keep serving a stale reading.
+    # The original-byte hash groups logged entries across preprocessing changes.
+    # Only the derived cache key includes the image policy and model configuration.
     image_hash = detection_cache.hash_image(raw)
     # A caption can change both the portion and whether the request is allowed.
     cache_key = detection_cache.photo_cache_key(image_hash, note, meal_type)
@@ -46,12 +39,8 @@ async def detect_photo(
         await transaction.commit(db)
         return await _ground_response(db, cached, cache_key, grounding)
 
-    # Pillow is CPU-bound and blocking; on a single worker it would otherwise
-    # stall every other in-flight request while a phone photo is resized.
-    prepared = await run_in_threadpool(imaging.prepare_image, raw)
-
     response = await detector.detect_photo(
-        prepared, note=note, meal_type=meal_type, image_hash=image_hash
+        raw, note=note, meal_type=meal_type, image_hash=image_hash
     )
 
     if not response.is_provisional:

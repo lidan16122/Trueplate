@@ -26,6 +26,7 @@ from app.db.repositories import detections as repository
 from app.models.enums import DetectionMethod, MealType
 from app.schemas.detection import FoodDetectionResponse
 from app.schemas.grounding import GroundedNutritionResponse
+from app.services.detection import imaging
 from app.services.detection.detector import PROMPT_FINGERPRINT
 from app.services.grounding.service import cache_fingerprint
 
@@ -55,7 +56,7 @@ def photo_cache_key(
     Captions and meal types belong to the request: sharing their result could
     bypass a refusal or replay a portion another caller supplied.
 
-    The model id, the effort and the prompt fingerprint are folded in for the
+    The image policy, model id, effort and prompt fingerprint are folded in for the
     same reason they are on the text path: each of them changes the answer.
     Keying the cache on image bytes alone would keep serving a pre-upgrade
     reading of a meal to anyone who had already logged it, with no way to
@@ -66,6 +67,10 @@ def photo_cache_key(
         settings.anthropic_model,
         settings.anthropic_effort,
         PROMPT_FINGERPRINT,
+        imaging.PREPROCESSING_VERSION,
+        str(settings.detect_image_max_edge_px),
+        str(settings.detect_image_crop_max_edge_px),
+        str(settings.detect_image_jpeg_quality),
         (note or "").strip(),
         str(meal_type or ""),
     )

@@ -144,11 +144,13 @@ class Settings(BaseSettings):
     grounding_max_tokens: int = Field(default=2000, gt=0)
 
     detect_image_max_bytes: int = 8 * 1024 * 1024
-    # Opus 5 accepts up to 2576 px on the long edge, but a full-resolution image
-    # costs roughly 3x the tokens of one this size. Downsampling is the single
-    # biggest lever on per-photo cost, so it starts conservative — raise it only
-    # against a measured portion-accuracy gain, not on principle.
-    detect_image_max_edge_px: int = 1568
+    # A smaller overview saves visual tokens; requested crops retain original detail.
+    # 1568 restores the previous overview size when evaluating recognition tradeoffs.
+    detect_image_max_edge_px: int = Field(default=1024, ge=28, le=2576)
+    # Crops have their own budget so a small sauce cannot become a full-size image.
+    detect_image_crop_max_edge_px: int = Field(default=768, ge=28, le=2576)
+    # Quality changes request bytes, not visual tokens; hold it steady during resize trials.
+    detect_image_jpeg_quality: int = Field(default=88, ge=1, le=95)
 
     # Web search identifies *what a food is*; it never sources a number. Scoped
     # to known-provenance references so an SEO recipe blog can never influence a
