@@ -3,6 +3,7 @@
 Every test here is named for the symptom it would show if the behaviour broke.
 """
 
+import base64
 import io
 
 import httpx
@@ -21,6 +22,7 @@ from app.services.detection.detector import (
     NotFoodError,
     NothingDetected,
 )
+from app.services.model_usage import ModelUsage
 from app.services.nutrition import NutritionResolver, OpenFoodFactsClient, UsdaClient
 from tests.fakes import (
     FakeAnthropic,
@@ -249,6 +251,62 @@ async def test_zoom_request_returns_a_crop_and_the_loop_continues(
     assert result_block["tool_use_id"] == "toolu_zoom"
     # The crop comes back as an image, not a description of one.
     assert result_block["content"][0]["type"] == "image"
+
+
+async def test_photo_workflow_sends_small_overview_then_original_detail_and_reuses_cache(
+    db_session, monkeypatch
+):
+    monkeypatch.setattr(settings, "detect_image_max_edge_px", 1024)
+    monkeypatch.setattr(settings, "detect_image_crop_max_edge_px", 768)
+    raw = _jpeg(4000, 3000)
+    service, fake = _service(
+        db_session,
+        [
+            message(
+                [
+                    tool_use(
+                        ZOOM_TOOL_NAME,
+                        {"x": 0, "y": 0, "width": 0.05, "height": 0.05, "reason": "detail"},
+                        "zoom",
+                    )
+                ]
+            ),
+            message([tool_use(TOOL_NAME, food_result())]),
+        ],
+    )
+    first = await workflow.detect_photo(db_session, service, raw, None, None)
+    second = await workflow.detect_photo(db_session, service, raw, None, None)
+    assert second.cached is True
+    assert first.image_hash == second.image_hash
+    assert len(fake.calls) == 2
+    overview = fake.calls[0]["messages"][0]["content"][0]
+    crop = fake.calls[1]["messages"][-1]["content"][0]["content"][0]
+    with Image.open(io.BytesIO(base64.b64decode(overview["source"]["data"]))) as image:
+        assert image.size == (1024, 768)
+    with Image.open(io.BytesIO(base64.b64decode(crop["source"]["data"]))) as image:
+        # A crop of the overview would only contain 51 x 38 pixels here.
+        assert image.size == (200, 150)
+
+
+async def test_usage_includes_zoom_and_repair_turns(db_session):
+    service, _ = _service(
+        db_session,
+        [
+            message(
+                [tool_use(ZOOM_TOOL_NAME, {"x": 0, "y": 0, "width": 0.5, "height": 0.5}, "zoom")]
+            ),
+            message([tool_use(TOOL_NAME, food_result(foods=[], components=["chicken"]))]),
+            message([tool_use(TOOL_NAME, food_result())]),
+        ],
+    )
+    usage = ModelUsage()
+    await service.detect_photo(TINY_JPEG, usage=usage)
+    assert usage.turns == 3
+    assert usage.zooms == 1
+    assert usage.repairs == 1
+    assert usage.input == 360
+    assert usage.output == 1020
+    assert usage.total_input == 6960
 
 
 async def test_zoom_tool_is_withheld_when_there_is_no_photo(db_session: AsyncSession) -> None:

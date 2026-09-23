@@ -22,7 +22,7 @@ import hashlib
 import json
 import logging
 import uuid
-from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 
 import anthropic
@@ -42,6 +42,7 @@ from app.schemas.detection import (
     anthropic_tool_schema,
 )
 from app.services.detection import imaging
+from app.services.model_usage import ModelUsage
 from app.services.nutrition import NutritionResolver
 
 logger = logging.getLogger(__name__)
@@ -53,47 +54,6 @@ ZOOM_TOOL_NAME = "zoom_region"
 # is a zoom, a web search continuation, or a paused turn resuming; a healthy
 # detection uses two or three.
 _MAX_TURNS = 8
-
-# Claude Opus 5 list rates, per token. Used only to put a number in the log —
-# this is observability, not billing, and it is deliberately not a config value:
-# a stale price here produces a misleading log line, whereas a stale price in
-# config would look authoritative.
-_USD_PER_INPUT_TOKEN = 5.00 / 1_000_000
-_USD_PER_OUTPUT_TOKEN = 25.00 / 1_000_000
-# Cached reads bill at a tenth of the input rate; writes carry a 25% premium.
-_CACHE_READ_RATE = 0.10
-_CACHE_WRITE_RATE = 1.25
-
-
-@dataclass
-class _Spend:
-    """Running token total for one detection, across every loop iteration.
-
-    A detection is several API calls — zooms, web-search continuations, paused
-    turns — and only the sum is meaningful. Reading usage off the final response
-    alone silently undercounts every multi-turn detection, which are exactly the
-    expensive ones.
-    """
-
-    input: int = 0
-    output: int = 0
-    cache_read: int = 0
-    cache_write: int = 0
-    turns: int = 0
-
-    def add(self, usage: Any) -> None:
-        self.turns += 1
-        self.input += getattr(usage, "input_tokens", 0) or 0
-        self.output += getattr(usage, "output_tokens", 0) or 0
-        self.cache_read += getattr(usage, "cache_read_input_tokens", 0) or 0
-        self.cache_write += getattr(usage, "cache_creation_input_tokens", 0) or 0
-
-    @property
-    def usd(self) -> float:
-        billable_input = (
-            self.input + self.cache_read * _CACHE_READ_RATE + self.cache_write * _CACHE_WRITE_RATE
-        )
-        return billable_input * _USD_PER_INPUT_TOKEN + self.output * _USD_PER_OUTPUT_TOKEN
 
 
 class DetectionError(Exception):
@@ -357,7 +317,11 @@ class DetectionService:
     # ------------------------------------------------------------------
 
     async def detect_text(
-        self, description: str, meal_type: MealType | None = None
+        self,
+        description: str,
+        meal_type: MealType | None = None,
+        *,
+        usage: ModelUsage | None = None,
     ) -> FoodDetectionResponse:
         result = await self._run(
             [
@@ -367,6 +331,7 @@ class DetectionService:
                 }
             ],
             image=None,
+            usage=usage,
         )
         return await self._resolve(
             result,
@@ -382,8 +347,12 @@ class DetectionService:
         note: str | None = None,
         meal_type: MealType | None = None,
         image_hash: str | None = None,
+        usage: ModelUsage | None = None,
     ) -> FoodDetectionResponse:
-        blocks: list[dict[str, Any]] = [_image_block(image)]
+        """Accept the original upload so HTTP and evaluation use identical image handling."""
+        # Pillow stays off the event loop; only the overview is sent on the first turn.
+        prepared = await run_in_threadpool(imaging.prepare_image, image)
+        blocks: list[dict[str, Any]] = [_image_block(prepared)]
         if note and note.strip():
             # After the image, because the caption qualifies what is in it — and
             # because anything volatile belongs behind the cached prefix.
@@ -406,7 +375,7 @@ class DetectionService:
                 }
             )
 
-        result = await self._run(blocks, image=image)
+        result = await self._run(blocks, image=image, usage=usage)
         return await self._resolve(
             result,
             kind=DetectionMethod.PHOTO,
@@ -446,7 +415,11 @@ class DetectionService:
         return self._client
 
     async def _run(
-        self, blocks: list[dict[str, Any]], *, image: bytes | None
+        self,
+        blocks: list[dict[str, Any]],
+        *,
+        image: bytes | None,
+        usage: ModelUsage | None = None,
     ) -> FoodDetectionResult:
         client = self._require_client()
 
@@ -455,7 +428,8 @@ class DetectionService:
             tools.append(_zoom_tool())
 
         messages: list[dict[str, Any]] = [{"role": "user", "content": blocks}]
-        spend = _Spend()
+        spend = usage if usage is not None else ModelUsage()
+        started = perf_counter()
         # One re-ask per *kind* of fault, not one per detection. `_self_contradiction`
         # names three, so this self-caps at three re-asks — well inside `_MAX_TURNS`
         # — and a clean detection still costs a single turn. A fault already raised
@@ -515,7 +489,7 @@ class DetectionService:
             except anthropic.APIConnectionError as exc:
                 raise DetectionUnavailable("Could not reach the detection service.") from exc
 
-            spend.add(response.usage)
+            await spend.add(response.usage)
 
             if response.stop_reason == "refusal":
                 # Checked before touching content: a refusal is a 200 whose
@@ -548,7 +522,7 @@ class DetectionService:
                 # count sitting on the ceiling.
                 logger.info(
                     "detection %s: %d turn(s), stop=%s, in=%d out=%d/%d "
-                    "cache_read=%d cache_write=%d ~$%.4f",
+                    "cache_read=%d cache_write=%d zooms=%d repairs=%d seconds=%.3f",
                     "photo" if image is not None else "text",
                     spend.turns,
                     response.stop_reason,
@@ -557,7 +531,9 @@ class DetectionService:
                     settings.anthropic_max_tokens,
                     spend.cache_read,
                     spend.cache_write,
-                    spend.usd,
+                    spend.zooms,
+                    spend.repairs,
+                    perf_counter() - started,
                 )
                 try:
                     payload = final.input
@@ -599,6 +575,7 @@ class DetectionService:
                 if complaint is not None and complaint[0] not in raised:
                     kind, message = complaint
                     raised.add(kind)
+                    spend.repairs += 1
                     if kind == "count" and len(result.components) > len(result.foods):
                         repair_inventory = result
                         repair_model, repair_tool = anthropic_portion_repair_tool(result.components)
@@ -636,6 +613,7 @@ class DetectionService:
 
             zooms = [b for b in tool_calls if b.name == ZOOM_TOOL_NAME]
             if zooms and image is not None:
+                spend.zooms += len(zooms)
                 messages.append({"role": "assistant", "content": response.content})
                 messages.append({"role": "user", "content": await self._zoom_results(zooms, image)})
                 continue
@@ -763,12 +741,7 @@ class DetectionService:
         return FoodDetectionResult.model_validate({**payload, "foods": kept}), dropped
 
     async def _zoom_results(self, zooms: list[Any], image: bytes) -> list[dict[str, Any]]:
-        """Crop each requested region and hand the magnified views back.
-
-        All results go in a single user message. Splitting them across messages
-        trains the model out of requesting several crops at once, which is the
-        efficient shape.
-        """
+        """Return bounded original-image crops together so several regions need only one turn."""
         results: list[dict[str, Any]] = []
         for call in zooms:
             args = call.input or {}

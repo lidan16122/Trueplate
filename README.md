@@ -281,8 +281,13 @@ a refresh conflict.
   but multiple foods saved from one text result can count separately.
 - Photo, text, and barcode endpoints also share a per-user rate limit: **20 requests per hour**
   by default, configurable in `server/.env`.
-- Photo cache keys include the image, note, and meal type, plus the model, effort, and prompt/schema
-  fingerprint. Changing the note or meal type uses a separate cache entry.
+- Photo cache keys include the image, note, and meal type, plus the model, effort, prompt/schema,
+  and preprocessing settings. Changing these uses a separate cache entry; saved image groups stay stable.
+- Photos are sent as JPEG overviews with a **1,024 px** maximum edge and quality **88**.
+  Requested crops use the original image, capped separately at **768 px**, without enlargement.
+  Configure `DETECT_IMAGE_MAX_EDGE_PX`, `DETECT_IMAGE_CROP_MAX_EDGE_PX`, and
+  `DETECT_IMAGE_JPEG_QUALITY` in the server environment. The smaller overview is a candidate
+  pending real-photo accuracy checks; see the [evaluation and rollout notes](docs/image-token-optimization-plan.md).
 - Uploads default to an **8 MiB** limit. Use JPEG, PNG, or WebP; HEIC/HEIF decoding depends
   on image-library support in the runtime.
 
@@ -308,7 +313,8 @@ a refresh conflict.
 - [Grounded nutrition pipeline](docs/grounded-nutrition-rag.md): retrieval, response contracts,
   numeric safeguards, cache behavior and validation.
 - [Developer scripts](server/scripts/): resolver probes, detection checks, and recorded matching evaluations.
-  Photo detection probes and detection evaluations make paid model calls; the seed and live probes
+  Photo detection probes and live detection evaluations make paid model calls; `eval_detection`
+  with `--images-only` compares preprocessing offline. The seed and live probes
   can write to the configured database. `python -m scripts.eval_matching` runs from `server/`
   against recorded fixtures without network or database access.
 - [MIT license](LICENSE).

@@ -3,18 +3,24 @@
 Run ``python -m scripts.eval_detection --runs 3`` for the text cases. Use
 ``--photo path/to/meal.jpg --case topped_plate`` to check a photo against that
 case's expected foods instead. Photos default to the two-slice pizza case.
-This uses the configured paid model and public nutrition APIs, never the app database.
+Use ``--image-edges 1568 1280 1024 --report comparison.json`` with a photo to
+compare complete detections, including grounded explanations. ``--images-only``
+compares encoded dimensions and bytes offline without any API calls.
+Live runs use the configured paid model and public nutrition APIs, never the app database.
 """
 
 import argparse
 import asyncio
+import json
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
+from time import perf_counter
 
 import httpx
 from anthropic import AsyncAnthropic
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from starlette.concurrency import run_in_threadpool
 
 from app.config import settings
 from app.db.base import Base
@@ -23,6 +29,8 @@ from app.db.models.food import Food
 from app.schemas.detection import FoodDetectionResponse
 from app.services.detection import imaging
 from app.services.detection.detector import PROMPT_FINGERPRINT, DetectionError, DetectionService
+from app.services.grounding import GroundedResponseService
+from app.services.model_usage import ModelUsage
 from app.services.nutrition import NutritionResolver, OpenFoodFactsClient, UsdaClient
 
 logger = logging.getLogger(__name__)
@@ -128,67 +136,122 @@ def problems(case: Case, response: FoodDetectionResponse) -> list[str]:
     return failures
 
 
-async def evaluate(runs: int, selected: str | None, photo: Path | None) -> int:
+async def _measure_run(service, grounding, case: Case, raw: bytes | None, run: int) -> dict:
+    """Include failed runs and the second model pass so smaller images cannot hide extra work."""
+    detection_usage, grounding_usage = ModelUsage(), ModelUsage()
+    started = perf_counter()
+    row = {"case": case.name, "run": run}
+    try:
+        response = (
+            await service.detect_photo(raw, usage=detection_usage)
+            if raw is not None
+            else await service.detect_text(case.text, usage=detection_usage)
+        )
+        grounded = await grounding.generate(response, usage=grounding_usage)
+        row.update(
+            errors=problems(case, response),
+            provisional=response.is_provisional,
+            unresolved=sum(item.matched is None for item in response.items),
+            grounding_status=grounded.status,
+            foods=[
+                {"label": item.detected.label, "grams": item.detected.estimated_grams}
+                for item in response.items
+            ],
+        )
+    except DetectionError as error:
+        row["errors"] = [type(error).__name__]
+    row.update(
+        seconds=round(perf_counter() - started, 3),
+        detection=asdict(detection_usage),
+        grounding=asdict(grounding_usage),
+        total_input=detection_usage.total_input + grounding_usage.total_input,
+        total_output=detection_usage.output + grounding_usage.output,
+    )
+    verdict = "FAIL" if row["errors"] else "PASS"
+    print(f"{verdict} {case.name} run={run}: {json.dumps(row)}", flush=True)
+    return row
+
+
+async def evaluate(
+    runs: int,
+    selected: str | None,
+    photo: Path | None,
+    *,
+    edges: list[int] | None = None,
+    qualities: list[int] | None = None,
+    images_only: bool = False,
+    report: Path | None = None,
+) -> int:
     cases = [case for case in CASES if selected is None or case.name == selected]
-    prepared = imaging.prepare_image(photo.read_bytes()) if photo is not None else None
-    if prepared is not None:
+    raw = photo.read_bytes() if photo is not None else None
+    if raw is not None:
         expected = next(case for case in CASES if case.name == (selected or "pizza"))
         # A text case's explicit grams say nothing about the photographed portion.
         cases = [replace(expected, name=f"photo_{expected.name}", grams=None)]
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    failed, total = 0, 0
-    print(
-        f"model={settings.anthropic_model} effort={settings.anthropic_effort} "
-        f"prompt={PROMPT_FINGERPRINT}",
-        flush=True,
-    )
+    original_edge = settings.detect_image_max_edge_px
+    original_quality = settings.detect_image_jpeg_quality
+    profiles = [
+        (edge, quality)
+        for quality in (qualities or [original_quality])
+        for edge in (edges or [original_edge])
+    ]
+    results = {
+        "model": settings.anthropic_model,
+        "effort": settings.anthropic_effort,
+        "prompt": PROMPT_FINGERPRINT,
+        "preprocessing": imaging.PREPROCESSING_VERSION,
+        "crop_max_edge": settings.detect_image_crop_max_edge_px,
+        "images_only": images_only,
+        "profiles": [],
+    }
+    # Offline comparisons need neither an engine nor an external client.
+    engine = None if images_only else create_async_engine("sqlite+aiosqlite:///:memory:")
     try:
-        async with engine.begin() as connection:
-            await connection.run_sync(
-                Base.metadata.create_all, tables=[Food.__table__, BarcodeProduct.__table__]
-            )
-        async with (
-            async_sessionmaker(engine, expire_on_commit=False)() as db,
-            httpx.AsyncClient(timeout=settings.nutrition_timeout_seconds) as http,
-            AsyncAnthropic(
-                api_key=settings.anthropic_api_key, timeout=settings.anthropic_timeout_seconds
-            ) as client,
-        ):
-            resolver = NutritionResolver(db, UsdaClient(http), OpenFoodFactsClient(http))
-            service = DetectionService(resolver, client=client)
-            for case in cases:
-                for run in range(1, runs + 1):
-                    total += 1
-                    try:
-                        response = (
-                            await service.detect_photo(prepared)
-                            if prepared is not None
-                            else await service.detect_text(case.text)
-                        )
-                    except DetectionError as error:
-                        failed += 1
-                        print(f"FAIL {case.name} {run}/{runs}: {type(error).__name__}", flush=True)
-                        continue
-                    errors = problems(case, response)
-                    failed += bool(errors)
-                    labels = ", ".join(item.detected.label for item in response.items)
-                    verdict = "FAIL" if errors else "PASS"
-                    print(
-                        f"{verdict} {case.name} {run}/{runs}: {labels}; {'; '.join(errors)}",
-                        flush=True,
-                    )
-                    for item in response.items:
-                        logger.info(
-                            "%s: %sg; terms=%s; matched=%s; source=%s",
-                            item.detected.label,
-                            item.detected.estimated_grams,
-                            item.detected.search_terms,
-                            item.matched.name if item.matched else None,
-                            item.matched.source if item.matched else None,
+        if engine is not None:
+            async with engine.begin() as connection:
+                await connection.run_sync(
+                    Base.metadata.create_all, tables=[Food.__table__, BarcodeProduct.__table__]
+                )
+        for edge, quality in profiles:
+            settings.detect_image_max_edge_px = edge
+            settings.detect_image_jpeg_quality = quality
+            profile = {"max_edge": edge, "jpeg_quality": quality, "runs": []}
+            results["profiles"].append(profile)
+            if raw is not None:
+                prepared = await run_in_threadpool(imaging.prepare_image, raw)
+                profile["original"] = await run_in_threadpool(imaging.image_stats, raw)
+                profile["prepared"] = await run_in_threadpool(imaging.image_stats, prepared)
+            print(json.dumps({key: value for key, value in profile.items() if key != "runs"}))
+            if engine is None:
+                continue
+            async with (
+                async_sessionmaker(engine, expire_on_commit=False)() as db,
+                httpx.AsyncClient(timeout=settings.nutrition_timeout_seconds) as http,
+                AsyncAnthropic(
+                    api_key=settings.anthropic_api_key, timeout=settings.anthropic_timeout_seconds
+                ) as client,
+            ):
+                resolver = NutritionResolver(db, UsdaClient(http), OpenFoodFactsClient(http))
+                service = DetectionService(resolver, client=client)
+                grounding = GroundedResponseService(client=client)
+                for case in cases:
+                    for run in range(1, runs + 1):
+                        profile["runs"].append(
+                            await _measure_run(service, grounding, case, raw, run)
                         )
     finally:
-        await engine.dispose()
-    print(f"{total - failed}/{total} grouping checks passed", flush=True)
+        settings.detect_image_max_edge_px = original_edge
+        settings.detect_image_jpeg_quality = original_quality
+        if engine is not None:
+            await engine.dispose()
+        if report is not None:
+            report.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")
+    measured_runs = [row for profile in results["profiles"] for row in profile["runs"]]
+    failed = sum(bool(row["errors"]) for row in measured_runs)
+    if not images_only:
+        print(
+            f"{len(measured_runs) - failed}/{len(measured_runs)} grouping checks passed", flush=True
+        )
     return 1 if failed else 0
 
 
@@ -198,17 +261,43 @@ def main() -> int:
     parser.add_argument("--case", choices=[case.name for case in CASES])
     parser.add_argument("--photo", type=Path)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument(
+        "--image-edges", type=int, nargs="+", help="Compare overview sizes serially"
+    )
+    parser.add_argument("--jpeg-qualities", type=int, nargs="+", help="Compare JPEG byte sizes")
+    parser.add_argument(
+        "--images-only", action="store_true", help="Offline resize only; no API calls"
+    )
+    parser.add_argument("--report", type=Path, help="Save dimensions, all runs, and usage as JSON")
     args = parser.parse_args()
+    if (args.image_edges or args.jpeg_qualities or args.images_only) and args.photo is None:
+        parser.error("image comparisons require --photo")
+    if args.image_edges and any(not 28 <= edge <= 2576 for edge in args.image_edges):
+        parser.error("image edges must be between 28 and 2576")
+    if args.jpeg_qualities and any(not 1 <= quality <= 95 for quality in args.jpeg_qualities):
+        parser.error("JPEG qualities must be between 1 and 95")
     # HTTP request logs include USDA's query-string credential.
     logging.basicConfig(level=logging.WARNING)
     if args.verbose:
         logging.getLogger("app.services.detection.detector").setLevel(logging.INFO)
         logger.setLevel(logging.INFO)
-    if not settings.anthropic_api_key or "..." in settings.anthropic_api_key:
+    if not args.images_only and (
+        not settings.anthropic_api_key or "..." in settings.anthropic_api_key
+    ):
         parser.error("configure ANTHROPIC_API_KEY before running the live evaluation")
     if args.photo is not None and not args.photo.is_file():
         parser.error("the photo path must refer to a local image")
-    return asyncio.run(evaluate(args.runs, args.case, args.photo))
+    return asyncio.run(
+        evaluate(
+            args.runs,
+            args.case,
+            args.photo,
+            edges=args.image_edges,
+            qualities=args.jpeg_qualities,
+            images_only=args.images_only,
+            report=args.report,
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -1,8 +1,4 @@
-"""Pixel handling for the photo detection path.
-
-Pure functions over bytes: no I/O, no ORM, no model calls. Kept separate from
-``detection.py`` because these are the parts worth testing without an API key.
-"""
+"""Blocking pixel operations for the detection worker thread, with no external I/O."""
 
 import io
 import logging
@@ -13,83 +9,72 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# What we send upstream regardless of what the phone produced. JPEG because a
-# plate photo is a photograph — PNG would multiply the byte size for no visual
-# gain, and the model sees the same pixels either way.
+# JPEG keeps photo requests small; metadata is deliberately omitted when encoding.
 OUTPUT_MEDIA_TYPE = "image/jpeg"
-_JPEG_QUALITY = 88
+PREPROCESSING_VERSION = "original-crops-v1"
 
-# Anything a browser will hand us from a file input or a camera capture.
 ALLOWED_UPLOAD_TYPES = frozenset(
     {"image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"}
 )
 
 
-def prepare_image(data: bytes) -> bytes:
-    """Normalise an uploaded photo for the vision call.
+def _encode(image: Image.Image, max_edge: int) -> bytes:
+    """Bound visual tokens without enlarging pixels or retaining camera metadata."""
+    if image.mode not in ("RGB", "L"):
+        image = image.convert("RGB")
+    image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=settings.detect_image_jpeg_quality, optimize=True)
+    return buffer.getvalue()
 
-    Three things happen here, and each is load-bearing:
 
-    - **EXIF rotation is baked in.** Phone cameras store the sensor's raw
-      orientation plus a rotation flag. Strip the flag without applying it and a
-      portrait plate arrives sideways, which measurably degrades portion
-      estimates for no reason a reader would ever guess from the code.
-    - **Downscaled to the configured long edge.** Image tokens dominate the cost
-      of a detection, and a modern phone sends several times more pixels than
-      the model can use.
-    - **Re-encoded as JPEG**, which also discards any remaining metadata —
-      including GPS coordinates, which we have no reason to send anywhere.
+def image_stats(data: bytes) -> dict[str, int]:
+    """Describe encoded pixels without logging image content or invoking the model.
+
+    Visual tokens are a patch estimate before provider resizing, excluding request overhead.
     """
     with Image.open(io.BytesIO(data)) as image:
-        image = ImageOps.exif_transpose(image)
-        if image.mode not in ("RGB", "L"):
-            # JPEG cannot hold an alpha channel; a PNG screenshot of a menu would
-            # otherwise fail to encode.
-            image = image.convert("RGB")
+        width, height = image.size
+    return {
+        "width": width,
+        "height": height,
+        "bytes": len(data),
+        "visual_tokens": ((width + 27) // 28) * ((height + 27) // 28),
+    }
 
-        max_edge = settings.detect_image_max_edge_px
-        if max(image.size) > max_edge:
-            image.thumbnail((max_edge, max_edge), Image.LANCZOS)
 
-        buffer = io.BytesIO()
-        image.save(buffer, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-        return buffer.getvalue()
+def prepare_image(data: bytes) -> bytes:
+    """Prepare an oriented overview; the original upload remains available for crops."""
+    with Image.open(io.BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source)
+        original_size = image.size
+        prepared = _encode(image, settings.detect_image_max_edge_px)
+    logger.info(
+        "photo preparation: original=%sx%s bytes=%d prepared=%s quality=%d",
+        *original_size,
+        len(data),
+        image_stats(prepared),
+        settings.detect_image_jpeg_quality,
+    )
+    return prepared
 
 
 def crop_region(data: bytes, x: float, y: float, width: float, height: float) -> bytes:
-    """Crop a normalised (0-1) region and enlarge it back to a useful size.
+    """Crop the oriented original using the overview's normalized coordinates.
 
-    Coordinates are fractions of the image rather than pixels so the model never
-    has to know what resolution we happened to send it.
-
-    The upscale at the end is the point of the whole tool: a sauce occupying 8%
-    of a plate is a handful of pixels once the photo is downscaled, and returning
-    that crop at its native size tells the model nothing it could not already
-    see. Enlarging it spends tokens to buy detail exactly where the model said it
-    was uncertain.
+    Encoding directly from original pixels preserves detail that overview resizing discards.
     """
-    with Image.open(io.BytesIO(data)) as image:
-        image = ImageOps.exif_transpose(image)
+    with Image.open(io.BytesIO(data)) as source:
+        image = ImageOps.exif_transpose(source)
         img_w, img_h = image.size
 
-        # Clamp rather than reject. An out-of-range box is the model being
-        # approximate, not an error worth failing a detection over.
+        # Approximate boxes are clamped to a nonempty region inside the original.
         left = max(0, min(int(x * img_w), img_w - 1))
         top = max(0, min(int(y * img_h), img_h - 1))
         right = max(left + 1, min(int((x + width) * img_w), img_w))
         bottom = max(top + 1, min(int((y + height) * img_h), img_h))
-
-        cropped = image.crop((left, top, right, bottom))
-        if cropped.mode not in ("RGB", "L"):
-            cropped = cropped.convert("RGB")
-
-        target = settings.detect_image_max_edge_px
-        if max(cropped.size) < target:
-            scale = target / max(cropped.size)
-            cropped = cropped.resize(
-                (int(cropped.width * scale), int(cropped.height * scale)), Image.LANCZOS
-            )
-
-        buffer = io.BytesIO()
-        cropped.save(buffer, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
-        return buffer.getvalue()
+        cropped = _encode(
+            image.crop((left, top, right, bottom)), settings.detect_image_crop_max_edge_px
+        )
+    logger.info("photo crop: %s", image_stats(cropped))
+    return cropped

@@ -19,6 +19,7 @@ from app.schemas.detection import (
 from app.services.grounding import GroundedResponseService
 from app.services.grounding.context import build_context
 from app.services.grounding.service import TOOL_NAME, response_tool
+from app.services.model_usage import ModelUsage
 from tests.fakes import FakeAnthropic, message, text_block, tool_use
 
 
@@ -265,6 +266,17 @@ async def test_missing_configuration_returns_a_deterministic_response(monkeypatc
     monkeypatch.setattr(settings, "anthropic_api_key", "")
     result = await GroundedResponseService().generate(meal())
     assert result.status == "fallback"
+
+
+async def test_invalid_grounding_still_records_the_billed_response_usage():
+    usage = ModelUsage()
+    client = FakeAnthropic([plan("not-a-supported-fact")])
+    result = await GroundedResponseService(client).generate(meal(), usage=usage)
+    assert result.status == "fallback"
+    assert usage.turns == 1
+    assert usage.input == 120
+    assert usage.output == 340
+    assert usage.cache_write == 2200
 
 
 @pytest.mark.parametrize("grams, leader", [(200, None), (300, 2)])

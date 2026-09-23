@@ -16,9 +16,8 @@ It deliberately bypasses the route, so there is no auth, no rate limit, and
 **no detection cache** — every run is a fresh reading, which is the point when
 you are comparing two prompts against one photo.
 
-Unlike ``probe_resolver`` this one calls the model: roughly $0.065 a run at
-current Opus 5 rates. Run it against the same photo three times before believing
-any single result — the failure this exists to catch is intermittent.
+Unlike ``probe_resolver`` this calls the paid model. Compare repeated readings;
+the evaluation script includes grounding usage and avoids database write-backs.
 """
 
 import asyncio
@@ -32,7 +31,6 @@ from app.config import settings
 from app.db import transaction
 from app.db.loop import psycopg_loop_factory
 from app.db.session import engine
-from app.services.detection import imaging
 from app.services.detection.detector import PROMPT_FINGERPRINT, DetectionError, DetectionService
 from app.services.nutrition import (
     NutritionResolver,
@@ -53,11 +51,7 @@ def _household(item) -> str:  # noqa: ANN001 - ResolvedFoodItem, kept loose for 
 
 async def _probe(path: Path, note: str | None) -> int:
     raw = path.read_bytes()
-    # The same preparation the route applies, so the model sees the pixels it
-    # would see in production rather than the original phone capture.
-    prepared = imaging.prepare_image(raw)
-
-    print(f"image   {path.name}  {len(raw) / 1024:.0f} kB -> {len(prepared) / 1024:.0f} kB")
+    print(f"image   {path.name}  {len(raw) / 1024:.0f} kB original")
     print(f"model   {settings.anthropic_model}  effort={settings.anthropic_effort}")
     print(f"prompt  {PROMPT_FINGERPRINT}")
     if note:
@@ -72,7 +66,7 @@ async def _probe(path: Path, note: str | None) -> int:
         async with session_factory() as db:
             service = DetectionService(NutritionResolver(db, *resolver_deps))
             try:
-                response = await service.detect_photo(prepared, note=note)
+                response = await service.detect_photo(raw, note=note)
             except DetectionError as exc:
                 print(f"FAILED  {type(exc).__name__}: {exc}")
                 return 1
@@ -133,7 +127,7 @@ def main() -> int:
         print(__doc__)
         return 2
     # The service's own INFO line carries turn count, stop reason, token split
-    # and cost — the numbers that say *why* a reading came back short. Silencing
+    # and elapsed time — the numbers that say *why* a reading came back short. Silencing
     # them here would leave this script reporting the symptom and hiding the
     # cause it exists to expose.
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")

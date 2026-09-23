@@ -4,12 +4,15 @@ Its job is to avoid paying twice for the same photo. Its risk is the mirror
 image: answering the same photo the *same wrong way* for a month.
 """
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models.detection import Detection
 from app.models.enums import DetectionMethod, MealType
 from app.services.detection import cache as detection_cache
+from app.services.detection import imaging
 from app.services.detection.detector import PROMPT_FINGERPRINT
 
 
@@ -84,3 +87,29 @@ def test_user_supplied_separators_cannot_collide_with_another_field() -> None:
     assert detection_cache._key("rice|lunch", "dinner") != detection_cache._key(
         "rice", "lunch|dinner"
     )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("detect_image_max_edge_px", 1280),
+        ("detect_image_crop_max_edge_px", 512),
+        ("detect_image_jpeg_quality", 85),
+    ],
+)
+def test_image_policy_changes_retire_photo_readings_but_preserve_grouping_and_text(
+    monkeypatch, field, value
+):
+    image_hash = detection_cache.hash_image(b"original upload")
+    old_photo = detection_cache.photo_cache_key(image_hash, "half", MealType.LUNCH)
+    old_text = detection_cache.hash_text("rice", MealType.LUNCH)
+    monkeypatch.setattr(settings, field, value)
+    assert detection_cache.photo_cache_key(image_hash, "half", MealType.LUNCH) != old_photo
+    assert detection_cache.hash_image(b"original upload") == image_hash
+    assert detection_cache.hash_text("rice", MealType.LUNCH) == old_text
+
+
+def test_image_policy_version_invalidates_cached_photos(monkeypatch):
+    old = detection_cache.photo_cache_key("photo")
+    monkeypatch.setattr(imaging, "PREPROCESSING_VERSION", "next-policy")
+    assert detection_cache.photo_cache_key("photo") != old
