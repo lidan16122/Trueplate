@@ -13,7 +13,7 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
-from app.api.deps import CurrentUser, DbSession, Detector, FoodFacts
+from app.api.deps import CurrentUser, DbSession, Detector, FoodFacts, Grounding
 from app.api.limits import AI_DETECT_SCOPE, RateLimit, require_prompt_allowance
 from app.config import settings
 from app.models.enums import MealType
@@ -93,6 +93,7 @@ async def detect_from_photo(
     user: CurrentUser,
     db: DbSession,
     detector: Detector,
+    grounding: Grounding,
     image: UploadFile = File(...),  # noqa: B008 - FastAPI's parameter form
     note: str | None = Form(None, max_length=MAX_DESCRIPTION_LENGTH),  # noqa: B008
     meal_type: MealType | None = Form(None),  # noqa: B008
@@ -100,7 +101,7 @@ async def detect_from_photo(
     """Identify foods and estimate portions from a meal photo."""
     raw = await _read_upload(image)
     try:
-        return await workflow.detect_photo(db, detector, raw, note, meal_type)
+        return await workflow.detect_photo(db, detector, raw, note, meal_type, grounding)
     except DetectionError as exc:
         raise _translate(exc) from exc
 
@@ -115,6 +116,7 @@ async def detect_from_text(
     user: CurrentUser,
     db: DbSession,
     detector: Detector,
+    grounding: Grounding,
 ) -> FoodDetectionResponse:
     """Identify foods and estimate portions from a written description.
 
@@ -122,7 +124,7 @@ async def detect_from_text(
     what they ate: "100 g of rice" is a fact, where any photo estimate is not.
     """
     try:
-        return await workflow.detect_text(db, detector, payload)
+        return await workflow.detect_text(db, detector, payload, grounding)
     except DetectionError as exc:
         raise _translate(exc) from exc
 
@@ -162,7 +164,7 @@ async def detect_from_barcode(
 async def read_tool_schema(user: CurrentUser) -> dict:
     """The exact tool definition that will be sent to Claude.
 
-    Exposed so the "no calorie field can reach the model" property is
+    Exposed so the "detector cannot supply a calorie field" property is
     inspectable rather than a claim in a docstring.
     """
     return anthropic_tool_schema()

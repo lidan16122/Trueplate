@@ -24,6 +24,11 @@ Trueplate matches those foods to nutrition records from USDA FoodData Central or
 then scales the recorded values to your portion. Barcode lookups use the product's nutrition record
 directly, without AI.
 
+After photo or text recognition, Claude receives those source records and calculated values and
+selects supported facts for a cited nutrition summary. The backend supplies the wording and numbers;
+if generation is unavailable, it returns a deterministic summary. Editing foods or portions hides
+the original summary while the confirmation screen recalculates the current totals.
+
 Portions and food matches can be uncertain. The confirmation screen flags rough matches and foods
 without a usable nutrition record; unmatched items are excluded when saving. Correcting a portion
 recalculates its calories and nutrients immediately.
@@ -300,6 +305,8 @@ a refresh conflict.
 
 - [Working agreements](AGENTS.md): nutrition-data invariants and contribution conventions.
 - [Architecture plan](docs/architecture-plan.md): module boundaries and implementation decisions.
+- [Grounded nutrition pipeline](docs/grounded-nutrition-rag.md): retrieval, response contracts,
+  numeric safeguards, cache behavior and validation.
 - [Developer scripts](server/scripts/): resolver probes, detection checks, and recorded matching evaluations.
   Photo detection probes and detection evaluations make paid model calls; the seed and live probes
   can write to the configured database. `python -m scripts.eval_matching` runs from `server/`

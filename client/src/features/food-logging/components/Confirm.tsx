@@ -1,6 +1,8 @@
 import { Navigate } from "react-router";
 import { useConfirm } from "../hooks/useConfirm";
 import { type DraftItem } from "../models/draft";
+import { hasOriginalNutrition } from "../models/grounding";
+import { GroundedSummary } from "./GroundedSummary";
 
 import { ErrorNote } from "@/components/ErrorNote";
 import { Eyebrow } from "@/components/Eyebrow";
@@ -48,12 +50,15 @@ export function Confirm() {
   // Reached directly, with nothing to confirm.
   if (!proposal) return <Navigate to="/add" replace />;
 
+  const summary = proposal.grounded_response && hasOriginalNutrition(proposal, drafts) && (
+    <GroundedSummary summary={proposal.grounded_response} items={proposal.items} />
+  );
+
   const sourceNote =
     `${proposal.source_label}. Trueplate estimated the portions — the calorie numbers ` +
     "come from the food database once the grams are right." +
-    // `cached` existed to tell the user a reading cost nothing and is not a
-    // fresh look at the plate, and was never shown.
-    (proposal.cached ? " Recognised from an earlier reading of this photo." : "");
+    // Recognition was reused even when the grounded summary needed a fresh call.
+    (proposal.cached ? " Recognised from an earlier reading of this meal." : "");
 
   // The model's own inventory, above the list it produced from it. When a plate
   // of five things comes back as one row, this line is the only thing on screen
@@ -301,6 +306,7 @@ export function Confirm() {
           <p className="text-caption leading-relaxed text-subtle">{sourceNote}</p>
           {inventory}
           {advisoryNote}
+          {summary}
 
           <div className="flex flex-col gap-2">
             {rows.map(({ draft, calories, protein, carbs, fat, household }) => (
@@ -387,11 +393,12 @@ export function Confirm() {
         </header>
 
         <div className="flex min-h-0 flex-1">
-          <div className="flex w-[480px] flex-none flex-col gap-4 p-8">
-            <div className="min-h-0 flex-1">{photoPanel}</div>
+          <div className="flex w-[480px] flex-none flex-col gap-4 overflow-y-auto p-8">
+            <div className="min-h-[160px] flex-1">{photoPanel}</div>
             <p className="flex-none text-caption leading-relaxed text-subtle">{sourceNote}</p>
             <div className="flex-none">{inventory}</div>
             <div className="flex-none">{advisoryNote}</div>
+            <div className="flex-none">{summary}</div>
           </div>
 
           <div className="flex min-w-0 flex-1 flex-col border-l border-line-2">

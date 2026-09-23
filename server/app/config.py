@@ -139,6 +139,10 @@ class Settings(BaseSettings):
     # than we ever want to hold a request open.
     anthropic_timeout_seconds: float = 120.0
 
+    # The optional explanation must not delay a usable detection indefinitely.
+    grounding_timeout_seconds: float = Field(default=20.0, gt=0)
+    grounding_max_tokens: int = Field(default=2000, gt=0)
+
     detect_image_max_bytes: int = 8 * 1024 * 1024
     # Opus 5 accepts up to 2576 px on the long edge, but a full-resolution image
     # costs roughly 3x the tokens of one this size. Downsampling is the single

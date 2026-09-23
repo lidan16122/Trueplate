@@ -44,7 +44,8 @@ export function toDraft(item: ResolvedFoodItem, index: number): DraftItem {
     // `food_entries.name` the user's language, which `resolver.py` already
     // documents as the intent while this line quietly overrode it.
     name: detected.label,
-    grams: Math.round(detected.estimated_grams),
+    // Preserve the server portion until edited so its summary and our totals agree.
+    grams: detected.estimated_grams,
     confirmed: !item.is_rough,
     matched: item.matched,
     alternatives: item.alternatives,

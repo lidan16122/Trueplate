@@ -54,4 +54,16 @@ export interface FoodDetectionResponse {
   /** The server doubts this reading and did not cache it, so resubmitting retries. */
   is_provisional: boolean;
   notes: string | null;
+  /** Absent on older servers and null for barcode lookups. */
+  grounded_response?: GroundedNutritionResponse | null;
+}
+
+export interface GroundedNutritionResponse {
+  status: "generated" | "fallback";
+  statements: {
+    fact_id: string;
+    text: string;
+    /** Zero-based positions in the original detection's items. */
+    item_indices: number[];
+  }[];
 }
