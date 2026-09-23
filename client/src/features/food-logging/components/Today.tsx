@@ -40,10 +40,10 @@ export function Today() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-[1100px] px-6 pt-4 pb-32 md:px-8 md:pt-6 md:pb-12">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1100px] px-6 pt-4 pb-32 md:px-8 md:pt-6 md:pb-12">
         {/* Mobile chrome */}
         <div className="flex items-center justify-between md:hidden">
-          <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-ink">
+          <h1 className="text-heading-small font-semibold tracking-[-0.02em] text-ink">
             {formatDayLabel(selected, true)}
           </h1>
           <Avatar initials={user?.initials ?? "?"} />
@@ -63,7 +63,7 @@ export function Today() {
         </div>
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 md:mt-6">
-          <h1 className="hidden text-[24px] font-semibold tracking-[-0.02em] text-ink md:block">
+          <h1 className="hidden text-heading font-semibold tracking-[-0.02em] text-ink md:block">
             {formatDayLabel(selected, true)}
           </h1>
           <label className="flex w-full items-center justify-between gap-3 text-caption text-muted md:w-auto">
@@ -101,7 +101,7 @@ export function Today() {
                 </div>
                 {remaining != null && (
                   <div className="text-right">
-                    <div className="tabular font-mono text-[17px] text-ink">
+                    <div className="tabular font-mono text-entry text-ink">
                       {formatNumber(Math.abs(remaining))}
                     </div>
                     <div className="text-label text-subtle">

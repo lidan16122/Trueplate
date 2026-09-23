@@ -36,9 +36,10 @@ export function AddFood() {
 
 
   return (
-    <>
+    <main id="main-content" tabIndex={-1}>
       {/* ============================ MOBILE ============================ */}
       <div className="flex min-h-dvh flex-col bg-ink md:hidden">
+        <h1 className="sr-only">Add food</h1>
         <div className="flex flex-1 items-center justify-center p-6">
           <div className="flex h-full w-full max-w-[720px] flex-col items-center justify-center gap-2.5 overflow-hidden rounded-2xl border border-dashed border-line-dark">
             {/*
@@ -154,9 +155,10 @@ export function AddFood() {
         )}
 
         <div className="flex flex-none flex-col gap-4.5 px-6 pb-10">
-          <div className="flex items-center justify-center gap-9">
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-9">
             <button
               onClick={() => setMode(mode === "text" ? "idle" : "text")}
+              aria-pressed={mode === "text"}
               disabled={aiBlocked}
               className="flex w-[76px] flex-col items-center gap-[7px] disabled:opacity-40"
             >
@@ -195,6 +197,7 @@ export function AddFood() {
 
             <button
               onClick={() => setMode(mode === "barcode" ? "idle" : "barcode")}
+              aria-pressed={mode === "barcode"}
               className="flex w-[76px] flex-col items-center gap-[7px]"
             >
               <span
@@ -436,6 +439,6 @@ export function AddFood() {
           e.target.value = "";
         }}
       />
-    </>
+    </main>
   );
 }

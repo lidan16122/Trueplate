@@ -25,20 +25,20 @@ export function SignIn() {
   );
 
   return (
-    <div className="flex min-h-dvh flex-col bg-surface md:flex-row">
+    <main id="main-content" tabIndex={-1} className="flex min-h-dvh flex-col bg-surface lg:flex-row">
       {/* Copy side */}
-      <div className="flex flex-1 flex-col justify-between px-7 pt-12 pb-11 md:justify-center md:px-[88px] md:py-0">
+      <div className="flex min-w-0 flex-1 flex-col justify-between gap-8 px-7 pt-12 pb-11 lg:justify-center lg:px-12 lg:py-12 xl:px-[88px]">
         <div className="flex flex-1 flex-col justify-center gap-[18px] md:flex-none md:gap-[22px]">
           <Logo />
-          <h1 className="text-[38px] leading-[1.05] font-semibold tracking-[-0.03em] text-balance text-ink md:max-w-[520px] md:text-[52px] md:tracking-[-0.035em]">
+          <h1 className="text-hero leading-[1.05] font-semibold tracking-[-0.03em] text-balance text-ink md:max-w-[520px] md:text-hero-wide md:tracking-[-0.035em]">
             {HEADLINE}
           </h1>
-          <p className="text-lead leading-relaxed text-pretty text-muted md:max-w-[460px] md:text-[17px]">
+          <p className="text-lead leading-relaxed text-pretty text-muted md:max-w-[460px] md:text-entry">
             {SUBHEAD}
           </p>
         </div>
 
-        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:gap-4 md:pt-2">
+        <div className="relative flex flex-col gap-4 md:flex-row md:flex-wrap md:items-center md:gap-4 md:pt-2">
           {googleButton}
           <p className="text-center text-label leading-relaxed text-subtle md:max-w-[200px] md:text-left md:text-caption">
             Trueplate is a measurement tool, not medical advice.
@@ -52,7 +52,7 @@ export function SignIn() {
       </div>
 
       {/* Ink panel — desktop only. */}
-      <aside className="hidden w-[520px] flex-none flex-col justify-end gap-5 bg-ink p-14 md:flex">
+      <aside className="hidden w-[36%] max-w-[520px] flex-none flex-col justify-end gap-5 bg-ink p-10 lg:flex">
         <div className="flex h-[300px] items-center justify-center rounded-lg border border-dashed border-line-dark font-mono text-label tracking-[0.08em] text-on-dark-dim">
           PHOTO — MEAL ON A TABLE
         </div>
@@ -60,6 +60,6 @@ export function SignIn() {
           Every estimate is a proposal. You confirm the portion before anything is saved.
         </p>
       </aside>
-    </div>
+    </main>
   );
 }

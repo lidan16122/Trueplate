@@ -49,11 +49,11 @@ export function Progress() {
 
   return (
     <div className="min-h-dvh bg-page">
-      <main className="mx-auto flex w-full max-w-[900px] flex-col gap-10 px-6 py-10 md:px-8">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-[900px] flex-col gap-10 px-6 py-10 md:px-8">
         <div className="flex items-baseline justify-between">
           <div className="flex flex-col gap-2">
             <Eyebrow>Progress</Eyebrow>
-            <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-ink">
+            <h1 className="text-heading-large font-semibold tracking-[-0.02em] text-ink">
               Last 14 days
             </h1>
           </div>
@@ -70,12 +70,12 @@ export function Progress() {
                 <CartesianGrid stroke="var(--color-line-2)" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: "var(--color-faint)", fontSize: 11, fontFamily: "var(--font-mono)" }}
+                  tick={{ fill: "var(--color-faint)", fontSize: "var(--text-micro)", fontFamily: "var(--font-mono)" }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
-                  tick={{ fill: "var(--color-faint)", fontSize: 11, fontFamily: "var(--font-mono)" }}
+                  tick={{ fill: "var(--color-faint)", fontSize: "var(--text-micro)", fontFamily: "var(--font-mono)" }}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -84,7 +84,7 @@ export function Progress() {
                   contentStyle={{
                     border: "1px solid var(--color-line)",
                     borderRadius: "var(--radius-card)",
-                    fontSize: 13,
+                    fontSize: "var(--text-caption)",
                   }}
                 />
                 {target && (
@@ -92,10 +92,10 @@ export function Progress() {
                     y={target}
                     stroke="var(--color-accent)"
                     strokeDasharray="4 4"
-                    label={{ value: "target", fill: "var(--color-accent)", fontSize: 11 }}
+                    label={{ value: "target", fill: "var(--color-accent)", fontSize: "var(--text-micro)" }}
                   />
                 )}
-                <Bar dataKey="calories" fill="var(--color-ink)" radius={[4, 4, 0, 0]} />
+                <Bar isAnimationActive={false} dataKey="calories" fill="var(--color-ink)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -115,13 +115,13 @@ export function Progress() {
                 <CartesianGrid stroke="var(--color-line-2)" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: "var(--color-faint)", fontSize: 11, fontFamily: "var(--font-mono)" }}
+                  tick={{ fill: "var(--color-faint)", fontSize: "var(--text-micro)", fontFamily: "var(--font-mono)" }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <YAxis
                   domain={["dataMin - 1", "dataMax + 1"]}
-                  tick={{ fill: "var(--color-faint)", fontSize: 11, fontFamily: "var(--font-mono)" }}
+                  tick={{ fill: "var(--color-faint)", fontSize: "var(--text-micro)", fontFamily: "var(--font-mono)" }}
                   axisLine={false}
                   tickLine={false}
                 />
@@ -129,10 +129,11 @@ export function Progress() {
                   contentStyle={{
                     border: "1px solid var(--color-line)",
                     borderRadius: "var(--radius-card)",
-                    fontSize: 13,
+                    fontSize: "var(--text-caption)",
                   }}
                 />
                 <Line
+                  isAnimationActive={false}
                   type="monotone"
                   dataKey="weight"
                   stroke="var(--color-accent)"

@@ -75,9 +75,9 @@ export function Onboarding() {
   };
 
   return (
-    <div className="flex min-h-dvh flex-col bg-surface md:flex-row">
+    <div className="flex min-h-dvh flex-col bg-surface lg:flex-row">
       {/* Desktop: live answer summary, jump back to anything already asked. */}
-      <aside className="hidden w-[400px] flex-none flex-col gap-8 bg-ink p-11 md:flex">
+      <aside className="hidden w-[400px] flex-none flex-col gap-8 bg-ink p-11 lg:flex">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-white text-item font-bold text-ink">
             T
@@ -138,19 +138,19 @@ export function Onboarding() {
         </ul>
       </aside>
 
-      <main className="flex flex-1 flex-col md:min-w-0">
+      <main id="main-content" tabIndex={-1} className="flex flex-1 flex-col lg:min-w-0">
         {/* Back, segmented progress, and the step counter. */}
-        <div className="flex flex-none items-center gap-3.5 px-7 pt-2 md:h-[72px] md:justify-between md:border-b md:border-line-2 md:px-14 md:pt-0">
+        <div className="flex flex-none items-center gap-3.5 px-7 pt-2 lg:h-[72px] lg:justify-between lg:border-b lg:border-line-2 lg:px-14 lg:pt-0">
           <button
             onClick={() => void goBack()}
             aria-label={isGoalPage ? "Back" : "Back to sign in"}
-            className="-ml-2 flex h-[34px] w-[34px] items-center justify-center rounded-full text-[17px] text-muted transition-colors hover:bg-wash hover:text-ink md:ml-0 md:h-auto md:w-auto md:gap-2 md:text-body md:hover:bg-transparent"
+            className="-ml-2 flex h-[34px] w-[34px] items-center justify-center rounded-full text-entry text-muted transition-colors hover:bg-wash hover:text-ink lg:ml-0 lg:h-auto lg:w-auto lg:gap-2 lg:text-body lg:hover:bg-transparent"
           >
             <span aria-hidden>←</span>
-            <span className="hidden md:inline">Back</span>
+            <span className="hidden lg:inline">Back</span>
           </button>
 
-          <div className="flex flex-1 gap-1 md:w-[280px] md:flex-none md:gap-1.5">
+          <div className="flex flex-1 gap-1 lg:max-w-[280px] lg:gap-1.5">
             {Array.from({ length: TOTAL_STEPS }, (_, i) => (
               <div key={i} className="h-[3px] flex-1 overflow-hidden rounded-[2px] bg-track">
                 {i <= pageIndex(page) && <div className="h-full bg-accent" />}
@@ -158,22 +158,22 @@ export function Onboarding() {
             ))}
           </div>
 
-          <span className="tabular font-mono text-label text-subtle md:hidden">
-            {page + 1} / {TOTAL_STEPS}
+          <span className="tabular font-mono text-label text-subtle lg:hidden">
+            {pageIndex(page) + 1} / {TOTAL_STEPS}
           </span>
         </div>
 
-        <div className="flex flex-1 flex-col px-7 pt-9 pb-8 md:justify-center md:overflow-auto md:px-14 md:py-7">
-          <div className="flex max-w-[600px] flex-none flex-col gap-2.5 md:gap-3">
-            <h1 className="text-[30px] leading-[1.15] font-semibold tracking-[-0.025em] text-balance text-ink md:text-[40px] md:tracking-[-0.03em]">
+        <div className="flex flex-1 flex-col px-7 pt-9 pb-8 lg:justify-center lg:overflow-auto lg:px-14 lg:py-7">
+          <div className="flex max-w-[600px] flex-none flex-col gap-2.5 lg:gap-3">
+            <h1 className="text-intro leading-[1.15] font-semibold tracking-[-0.025em] text-balance text-ink lg:text-hero-large lg:tracking-[-0.03em]">
               {current.title}
             </h1>
-            <p className="text-item leading-relaxed text-pretty text-muted md:text-lead">
+            <p className="text-item leading-relaxed text-pretty text-muted lg:text-lead">
               {current.sub}
             </p>
           </div>
 
-          <div className="flex-1 overflow-auto pt-5.5 pb-2 md:max-w-[660px] md:flex-none md:overflow-visible md:pt-9 md:pb-0">
+          <div className="min-w-0 flex-1 pt-5.5 pb-2 lg:max-w-[660px] lg:flex-none lg:overflow-visible lg:pt-9 lg:pb-0">
             {isGoalPage ? (
               <div className="flex flex-col gap-3.5">
                 <div className="flex flex-col gap-2.5">
@@ -182,6 +182,7 @@ export function Onboarding() {
                     return (
                       <button
                         key={choice.id}
+                        aria-pressed={selected}
                         onClick={() => chooseGoal(choice.id)}
                         className="relative flex w-full flex-col gap-1 rounded-card border border-line bg-surface px-[18px] py-4 text-left transition-colors hover:border-icon-faint"
                       >
@@ -203,7 +204,7 @@ export function Onboarding() {
                 </div>
 
                 {showTargetWeight(answers.goal) && (
-                  <div className="flex items-center justify-between gap-3 rounded-card border border-line px-4 py-3.5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line px-4 py-3.5">
                     <div className="flex flex-col gap-0.5">
                       <span className="text-item font-medium text-ink">Target weight</span>
                       <span className="tabular font-mono text-label text-faint">
@@ -217,7 +218,7 @@ export function Onboarding() {
                 <TargetPreview preview={preview} />
               </div>
             ) : (
-              <div className="flex flex-col gap-[18px] md:gap-[22px]">
+              <div className="flex flex-col gap-[18px] lg:gap-[22px]">
                 <div className="grid grid-cols-2 gap-2.5">
                   <NameField
                     label="First name"
@@ -241,6 +242,7 @@ export function Onboarding() {
                       return (
                         <button
                           key={choice.id}
+                          aria-pressed={selected}
                           onClick={() => chooseSex(choice.id)}
                           className={`h-12 flex-1 rounded-card border text-item font-medium transition-colors ${
                             selected
@@ -255,14 +257,14 @@ export function Onboarding() {
                   </div>
                 </div>
 
-                {/* Mobile lays these out as rows, desktop as three columns. */}
-                <div className="flex flex-col gap-2.5 border-t border-divider pt-4 md:grid md:grid-cols-3 md:gap-[18px]">
+                {/* Fields wrap and the grid drops columns so enlarged figures remain editable. */}
+                <div className="flex flex-col gap-2.5 border-t border-divider pt-4 lg:grid lg:grid-cols-[repeat(auto-fit,minmax(14rem,1fr))] lg:gap-[18px]">
                   {BODY_KEYS.map((key) => (
                     <div
                       key={key}
-                      className="flex items-center justify-between gap-3 md:flex-col md:items-start md:gap-2"
+                      className="flex flex-wrap items-center justify-between gap-3 lg:flex-col lg:items-start lg:gap-2"
                     >
-                      <span className="text-item font-medium text-ink md:text-caption md:font-normal md:text-muted">
+                      <span className="text-item font-medium text-ink lg:text-caption lg:font-normal lg:text-muted">
                         {FIELDS[key].label}
                       </span>
                       {stepper(key)}
@@ -273,7 +275,7 @@ export function Onboarding() {
             )}
           </div>
 
-          <div className="flex flex-none md:hidden">
+          <div className="flex flex-none lg:hidden">
             <button
               onClick={goNext}
               disabled={blocked}
@@ -284,7 +286,7 @@ export function Onboarding() {
           </div>
         </div>
 
-        <div className="hidden h-[88px] flex-none items-center justify-end gap-5 border-t border-line-2 px-14 md:flex">
+        <div className="hidden h-[88px] flex-none items-center justify-end gap-5 border-t border-line-2 px-14 lg:flex">
           <span className="font-mono text-caption text-faint">Enter ↵</span>
           <button
             onClick={goNext}

@@ -7,9 +7,9 @@ import { useAuth } from "@/hooks/useAuth";
 /** Full-page hold while the initial session check settles. */
 export function AuthLoading() {
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-page">
+    <main id="main-content" tabIndex={-1} className="flex min-h-dvh items-center justify-center bg-page">
       <Eyebrow>Trueplate</Eyebrow>
-    </div>
+    </main>
   );
 }
 

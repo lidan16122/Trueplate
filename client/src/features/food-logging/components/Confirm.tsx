@@ -131,12 +131,13 @@ export function Confirm() {
   );
 
   const mealPicker = (height: string) => (
-    <div className="flex gap-1.5">
+    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
       {MEAL_ORDER.map((option) => {
         const selected = option === meal;
         return (
           <button
             key={option}
+            aria-pressed={selected}
             onClick={() => setMeal(option)}
             className={`flex-1 rounded-md border text-caption font-medium transition-colors ${height} ${
               selected
@@ -284,10 +285,10 @@ export function Confirm() {
   );
 
   return (
-    <>
+    <main id="main-content" tabIndex={-1}>
       {/* ============================ MOBILE ============================ */}
-      <div className="flex min-h-dvh flex-col bg-surface md:hidden">
-        <header className="flex h-13 flex-none items-center justify-between border-b border-line-2 pr-5 pl-4">
+      <div className="flex min-h-dvh flex-col bg-surface xl:hidden">
+        <header className="flex min-h-13 flex-none flex-wrap items-center justify-between gap-2 border-b border-line-2 pr-5 pl-4">
           <button
             onClick={() => navigate("/add")}
             aria-label="Back"
@@ -295,13 +296,13 @@ export function Confirm() {
           >
             ←
           </button>
-          <span className="text-item font-semibold text-ink">Check before saving</span>
+          <h1 className="text-item font-semibold text-ink">Check before saving</h1>
           <span className="tabular font-mono text-label text-faint">
             {formatDayLabel(date, true)}
           </span>
         </header>
 
-        <main className="flex flex-1 flex-col gap-4.5 overflow-auto px-5 pt-4 pb-[150px]">
+        <div className="flex flex-1 flex-col gap-4.5 overflow-auto px-5 pt-4 pb-40">
           <div className="h-[150px] flex-none">{photoPanel}</div>
           <p className="text-caption leading-relaxed text-subtle">{sourceNote}</p>
           {inventory}
@@ -327,8 +328,8 @@ export function Confirm() {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2.5">
-                  {gramsInput(draft, "w-[118px]", "h-11.5", "text-title")}
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {gramsInput(draft, "w-[7.375rem]", "h-11.5", "text-title")}
                   <div className="flex flex-1 flex-col items-end gap-0.5">
                     <span className="tabular font-mono text-title text-ink">
                       {formatNumber(calories)} kcal
@@ -339,7 +340,7 @@ export function Confirm() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   {confidence(draft)}
                   {householdInput(draft, household)}
                 </div>
@@ -361,10 +362,10 @@ export function Confirm() {
             </p>
           )}
           {error && <ErrorNote>{error}</ErrorNote>}
-        </main>
+        </div>
 
         <footer className="fixed inset-x-0 bottom-0 flex flex-col gap-3 border-t border-line-2 bg-surface px-5 pt-3.5 pb-7">
-          <div className="flex items-baseline justify-between">{footerTotals(26)}</div>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">{footerTotals(26)}</div>
           <button
             onClick={save}
             disabled={saving || drafts.length === 0}
@@ -376,7 +377,7 @@ export function Confirm() {
       </div>
 
       {/* =========================== DESKTOP ============================ */}
-      <div className="hidden h-dvh flex-col bg-surface md:flex">
+      <div className="hidden h-dvh flex-col bg-surface xl:flex">
         <header className="flex h-16 flex-none items-center justify-between border-b border-line-2 px-8">
           <div className="flex items-center gap-3.5">
             <button
@@ -385,7 +386,7 @@ export function Confirm() {
             >
               ← Back
             </button>
-            <span className="text-lead font-semibold text-ink">Check before saving</span>
+            <h1 className="text-lead font-semibold text-ink">Check before saving</h1>
           </div>
           <span className="tabular font-mono text-caption text-faint">
             {KIND_LABEL[proposal.kind] ?? proposal.kind} · {formatDayLabel(date, true)}
@@ -408,8 +409,8 @@ export function Confirm() {
                   key={draft.key}
                   className="flex flex-col gap-2 rounded-card border border-line-card px-4 py-3.5"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex min-w-[10rem] flex-1 flex-col gap-1.5">
                       <span className="truncate text-lead font-semibold text-ink">
                         {draft.name}
                       </span>
@@ -417,9 +418,9 @@ export function Confirm() {
                     </div>
 
                     {householdInput(draft, household)}
-                    {gramsInput(draft, "w-[104px]", "h-11", "text-entry")}
+                    {gramsInput(draft, "w-[6.5rem]", "h-11", "text-entry")}
 
-                    <div className="flex w-[118px] flex-none flex-col items-end gap-0.5">
+                    <div className="flex w-[7.375rem] flex-none flex-col items-end gap-0.5">
                       <span className="tabular font-mono text-entry text-ink">
                         {formatNumber(calories)}
                       </span>
@@ -469,6 +470,6 @@ export function Confirm() {
           </div>
         </div>
       </div>
-    </>
+    </main>
   );
 }

@@ -13,9 +13,9 @@ import { Eyebrow } from "@/components/Eyebrow";
 export function FoodLog() {
   return (
     <div className="flex min-h-dvh flex-col bg-page">
-      <main className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-6 px-6 py-10 md:px-8">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-[760px] flex-1 flex-col gap-6 px-6 py-10 md:px-8">
         <Eyebrow>Food log</Eyebrow>
-        <h1 className="text-[28px] font-semibold tracking-[-0.02em] text-ink">
+        <h1 className="text-heading-large font-semibold tracking-[-0.02em] text-ink">
           Not designed yet
         </h1>
         <p className="max-w-[520px] text-caption leading-relaxed text-pretty text-muted">

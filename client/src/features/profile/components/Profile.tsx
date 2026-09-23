@@ -29,7 +29,7 @@ export function Profile() {
     field: string,
     step = 1,
   ) => (
-    <label key={field} className="flex flex-col gap-1.5">
+    <label key={field} className="flex min-w-0 flex-col gap-1.5">
       <span className="text-caption text-muted">{label}</span>
       <span className="flex items-center gap-2">
         <input
@@ -40,7 +40,7 @@ export function Profile() {
             const parsed = Number.parseFloat(e.target.value);
             if (!Number.isNaN(parsed) && parsed !== value) void save({ [field]: parsed });
           }}
-          className="tabular h-13 w-full rounded-card border border-line bg-surface px-4 font-mono text-lead text-ink outline-none focus:border-accent"
+          className="tabular h-13 min-w-0 w-full rounded-card border border-line bg-surface px-4 font-mono text-lead text-ink outline-none focus:border-accent"
         />
         <span className="w-8 flex-none text-caption text-subtle">{unit}</span>
       </span>
@@ -50,7 +50,7 @@ export function Profile() {
   return (
     <div className="min-h-dvh bg-page">
       <header className="flex items-center justify-between border-b border-line-2 bg-surface px-6 py-4 md:px-8">
-        <h1 className="text-[18px] font-semibold text-ink">Profile</h1>
+        <h1 className="text-section font-semibold text-ink">Profile</h1>
         <button
           onClick={() => navigate("/today")}
           className="text-caption text-muted transition-colors hover:text-ink"
@@ -59,7 +59,7 @@ export function Profile() {
         </button>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-6 py-8 md:px-8">
+      <main id="main-content" tabIndex={-1} className="mx-auto flex w-full max-w-[760px] flex-col gap-10 px-6 py-8 md:px-8">
         {error && <ErrorNote>{error}</ErrorNote>}
 
         {/* Target */}
@@ -103,7 +103,7 @@ export function Profile() {
         <section className="flex flex-col gap-4">
           <Eyebrow>Account</Eyebrow>
           <div className="grid gap-4 md:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
+            <label className="flex min-w-0 flex-col gap-1.5">
               <span className="text-caption text-muted">First name</span>
               <input
                 value={firstName}
@@ -111,20 +111,20 @@ export function Profile() {
                 onBlur={() =>
                   firstName !== user?.first_name && void save({ first_name: firstName })
                 }
-                className="h-13 rounded-card border border-line bg-surface px-4 text-lead text-ink outline-none focus:border-accent"
+                className="h-13 min-w-0 rounded-card border border-line bg-surface px-4 text-lead text-ink outline-none focus:border-accent"
               />
             </label>
-            <label className="flex flex-col gap-1.5">
+            <label className="flex min-w-0 flex-col gap-1.5">
               <span className="text-caption text-muted">Last name</span>
               <input
                 value={lastName}
                 onChange={(e) => setLastName(e.target.value)}
                 onBlur={() => lastName !== user?.last_name && void save({ last_name: lastName })}
-                className="h-13 rounded-card border border-line bg-surface px-4 text-lead text-ink outline-none focus:border-accent"
+                className="h-13 min-w-0 rounded-card border border-line bg-surface px-4 text-lead text-ink outline-none focus:border-accent"
               />
             </label>
           </div>
-          <label className="flex flex-col gap-1.5">
+          <label className="flex min-w-0 flex-col gap-1.5">
             <span className="text-caption text-muted">Email (from Google, not editable)</span>
             <input
               value={user?.email ?? ""}
@@ -143,6 +143,7 @@ export function Profile() {
               return (
                 <button
                   key={option.id}
+                  aria-pressed={selected}
                   onClick={() => void save({ sex: option.id })}
                   className={`h-11 rounded-card border px-5 text-body transition-colors ${
                     selected
@@ -171,6 +172,7 @@ export function Profile() {
               return (
                 <button
                   key={option.id}
+                  aria-pressed={selected}
                   onClick={() => void save({ goal_type: option.id })}
                   disabled={saving}
                   className={`h-13 rounded-card border px-5 text-left text-caption transition-colors ${
@@ -199,7 +201,7 @@ export function Profile() {
 
         <button
           onClick={handleSignOut}
-          className="h-13 rounded-card border border-line text-caption text-muted transition-colors hover:border-warn hover:text-warn"
+          className="h-13 min-w-0 rounded-card border border-line text-caption text-muted transition-colors hover:border-warn hover:text-warn"
         >
           Sign out
         </button>
