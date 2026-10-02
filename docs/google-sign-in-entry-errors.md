@@ -88,11 +88,26 @@ After implementation:
 - Client lint, typecheck, and production build pass.
 - The existing backend auth/first-session suite passes: 64 tests, using SQLite,
   fakeredis, and substituted Google responses. No backend code changed.
-- Local browser inspection confirms that the recovery message and Google button
-  render together on the sign-in page.
+- Local desktop and mobile browser inspection confirms that the recovery message
+  and Google button render together on the sign-in page.
 
 This does **not** establish a root-cause fix for the reported production incident.
 The PR remains a draft recovery improvement pending the original error evidence.
+
+## Standards review
+
+No findings. Independent review confirmed that the diff preserves the existing
+architecture, OAuth transport, bounded timeout, and external-dependency test seam.
+New comments follow the one-to-two-sentence caption rule.
+
+## Spec review
+
+No new implementation findings. Independent review verified all 11 Worker tests,
+cookie/redirect preservation, unchanged ordinary API responses, sanitized diagnostics,
+and absence of callback replay. One acknowledged partial requirement remains: the
+original production rejection has not been identified or fixed.
+
+Review totals: Standards 0; Spec 0 new defects and 1 unresolved incident requirement.
 
 ## Architecture and test boundaries
 
