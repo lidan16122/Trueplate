@@ -52,6 +52,48 @@ a Google address, or `/signin?error=...` will distinguish the responsible servic
 For a proxy failure, correlate its timestamp with Worker/Render logs. Do not share
 cookie values, OAuth state, authorization codes, or full callback URLs.
 
+## Implemented recovery and verification
+
+The Worker now returns `303 /signin?error=connection` with `Cache-Control: no-store`
+when either OAuth GET route receives an upstream error, a non-redirect holding page,
+a network failure, a timeout, or invalid proxy configuration. The sign-in screen
+explains that the connection failed and offers the existing Google button for a new
+attempt. Successful redirects and their cookies pass through unchanged; ordinary
+API responses retain their status/body. No request is automatically retried.
+
+The permanent `google-sign-in-proxy` warning records only `stage` and `status`.
+For example, `{ stage: "start", status: 403 }` identifies a rejection received by the
+Worker before Google authorization. Status 502/504 also covers connection/timeout
+failures, and 500 covers invalid configuration; upstream responses can use those
+same codes. The record deliberately excludes request URLs, query strings, cookies,
+error objects, and response bodies. Logs emitted by hosting providers are outside
+this application logging change.
+
+The original regression invocation, from `client`, was:
+
+```powershell
+node --test test/worker-auth.test.mjs
+```
+
+Before implementation, the upstream 403 case failed with `403 !== 303`. A second
+case proved that a 200 holding page replaced the account chooser (`200 !== 303`).
+Both are deterministic simulations of upstream responses, not observations of the
+friend's failed request.
+
+After implementation:
+
+- All 11 Worker tests pass, including unchanged state/session cookies, specific
+  backend error redirects, no callback replay, and credential-free diagnostics.
+- The full client suite passes: 34 tests.
+- Client lint, typecheck, and production build pass.
+- The existing backend auth/first-session suite passes: 64 tests, using SQLite,
+  fakeredis, and substituted Google responses. No backend code changed.
+- Local browser inspection confirms that the recovery message and Google button
+  render together on the sign-in page.
+
+This does **not** establish a root-cause fix for the reported production incident.
+The PR remains a draft recovery improvement pending the original error evidence.
+
 ## Architecture and test boundaries
 
 `client/worker` owns the production same-origin proxy; auth routes live in
