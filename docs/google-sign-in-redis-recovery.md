@@ -11,7 +11,7 @@ time (08:06 UTC). The screenshot shows the existing `unavailable` sign-in messag
 | 11:06:13 | Google's token endpoint returns 200 |
 | 11:06:16 | Redis loses its connection while writing the session transaction |
 | 11:06:16 | The callback catches the failure and redirects to sign-in |
-| 11:06:17 | Anonymous session discovery returns 200 |
+| 11:06:17 | Session discovery returns 200 |
 
 The exception is `redis.exceptions.ConnectionError: Error UNKNOWN while writing
 to socket. Connection lost.` It escapes `RefreshTokenStore.create_session()` at
@@ -80,3 +80,7 @@ verification of the deployed change requires a subsequent real Google sign-in.
 Local verification: **442 passed, 1 skipped** across the backend suite, including
 13 new connection-failure cases. Ruff passes. No production settings or deployment
 were changed during this investigation.
+
+Independent reviews found no Standards or Spec issues. They checked the store
+boundary, retry limit, reuse of session values, redis-py's connection cleanup,
+unchanged Google exchange, and the external-transport regression tests.
