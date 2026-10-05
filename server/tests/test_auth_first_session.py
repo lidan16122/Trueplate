@@ -4,12 +4,128 @@ import uuid
 
 import httpx
 import pytest
+from redis.asyncio.retry import Retry
+from redis.backoff import NoBackoff
+from redis.exceptions import AuthenticationError, AuthorizationError, ResponseError
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from app.config import settings
 from app.core.security import create_access_token, decode_access_token
 from app.db.models import User
+from app.stores import keys
+from tests import fakes
 from tests.helpers import AUTH_API as API
-from tests.helpers import complete_onboarding, sign_in
+from tests.helpers import complete_onboarding, set_cookie_names, sign_in
+
+
+@pytest.fixture
+def fail_session_writes(redis, monkeypatch):
+    """Interrupt Redis transport while keeping the real pipeline and transaction behavior."""
+    # The production pool has no automatic command retries; fakeredis's client default differs.
+    redis.connection_pool.set_retry(Retry(NoBackoff(), 0))
+    connection_type = redis.connection_pool.connection_class
+    send = connection_type.send_packed_command
+
+    def install(*, failures=1, after_write=False, error_type=RedisConnectionError):
+        attempts = []
+
+        async def interrupted_send(connection, command, **kwargs):
+            packed = b"".join(command)
+            if b"MULTI" not in packed:
+                return await send(connection, command, **kwargs)
+            attempts.append(packed)
+            if len(attempts) > failures:
+                return await send(connection, command, **kwargs)
+            if after_write:
+                # fakeredis executes MULTI/EXEC here; disconnect then discards only the reply.
+                await send(connection, command, **kwargs)
+            raise error_type("Error UNKNOWN while writing to socket. Connection lost.")
+
+        monkeypatch.setattr(connection_type, "send_packed_command", interrupted_send)
+        return attempts
+
+    return install
+
+
+@pytest.mark.parametrize("returning_user", [False, True], ids=["new-user", "returning-user"])
+@pytest.mark.parametrize("after_write", [False, True], ids=["lost-write", "lost-reply"])
+@pytest.mark.parametrize("error_type", [RedisConnectionError, RedisTimeoutError])
+async def test_google_callback_recovers_when_redis_disconnects_during_session_creation(
+    client, google_token, redis, fail_session_writes, returning_user, after_write, error_type
+):
+    if returning_user:
+        await sign_in(client)
+        await complete_onboarding(client)
+        client.cookies.clear()
+    existing_families = set(await redis.keys(f"{keys.REFRESH_FAMILY_PREFIX}*"))
+    attempts = fail_session_writes(after_write=after_write, error_type=error_type)
+    exchanges = []
+    google_token(fakes.google_token_transport(seen=exchanges))
+
+    start = await client.get(f"{API}/google/start")
+    state = httpx.URL(start.headers["location"]).params["state"]
+
+    callback = await client.get(f"{API}/google/callback", params={"code": "abc", "state": state})
+
+    assert callback.status_code == 303
+    assert callback.headers["location"] == ("/today" if returning_user else "/onboarding")
+    session = await client.get(f"{API}/session")
+    assert session.status_code == 200
+    assert session.json()["user"]["email"] == "alice@example.com"
+    assert len(exchanges) == 1
+    assert len(attempts) == 2
+    assert attempts[0] == attempts[1]
+    claims = decode_access_token(client.cookies[settings.access_cookie_name])
+    assert set(await redis.keys(f"{keys.REFRESH_FAMILY_PREFIX}*")) == existing_families | {
+        keys.refresh_family_key(claims.session_id)
+    }
+    client.cookies.delete(settings.access_cookie_name)
+    assert (await client.post(f"{API}/refresh")).status_code == 200
+    assert (await client.get(f"{API}/session")).json() == session.json()
+    assert (await client.post(f"{API}/logout")).status_code == 200
+    assert await redis.exists(keys.refresh_family_key(claims.session_id)) == 0
+
+
+@pytest.mark.parametrize("error_type", [RedisConnectionError, RedisTimeoutError])
+async def test_a_persistent_redis_failure_stops_after_one_retry_without_auth_cookies(
+    client, google_token, fail_session_writes, error_type
+):
+    attempts = fail_session_writes(failures=10, error_type=error_type)
+    start = await client.get(f"{API}/google/start")
+    state = httpx.URL(start.headers["location"]).params["state"]
+
+    callback = await client.get(f"{API}/google/callback", params={"code": "abc", "state": state})
+
+    assert callback.headers["location"] == "/signin?error=unavailable"
+    assert len(attempts) == 2
+    assert settings.access_cookie_name not in set_cookie_names(callback)
+    assert settings.refresh_cookie_name not in set_cookie_names(callback)
+    assert (await client.get(f"{API}/session")).json() is None
+
+    # The account was already saved before Redis failed; a fresh attempt must still sign it in.
+    fail_session_writes(failures=0)
+    start = await client.get(f"{API}/google/start")
+    state = httpx.URL(start.headers["location"]).params["state"]
+    recovered = await client.get(f"{API}/google/callback", params={"code": "new", "state": state})
+    assert recovered.headers["location"] == "/onboarding"
+    assert (await client.get(f"{API}/session")).json()["user"]["email"] == "alice@example.com"
+
+
+@pytest.mark.parametrize("error_type", [AuthenticationError, AuthorizationError, ResponseError])
+async def test_a_redis_configuration_or_command_error_is_not_retried(
+    client, google_token, fail_session_writes, error_type
+):
+    attempts = fail_session_writes(error_type=error_type)
+    start = await client.get(f"{API}/google/start")
+    state = httpx.URL(start.headers["location"]).params["state"]
+
+    callback = await client.get(f"{API}/google/callback", params={"code": "abc", "state": state})
+
+    assert callback.headers["location"] == "/signin?error=unavailable"
+    assert len(attempts) == 1
+    assert settings.access_cookie_name not in set_cookie_names(callback)
+    assert settings.refresh_cookie_name not in set_cookie_names(callback)
 
 
 @pytest.mark.parametrize("returning_user", [False, True], ids=["new-user", "returning-user"])

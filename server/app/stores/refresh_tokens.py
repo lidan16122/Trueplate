@@ -5,6 +5,7 @@ concurrent tabs and lost responses cannot consume each other's session.
 """
 
 import hashlib
+import logging
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -12,9 +13,12 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from redis.asyncio import Redis
+from redis.exceptions import AuthenticationError, AuthorizationError, ConnectionError, TimeoutError
 
 from app.config import settings
 from app.stores import keys
+
+logger = logging.getLogger(__name__)
 
 TOKEN_BYTES = 32  # 256 bits
 
@@ -114,30 +118,42 @@ class RefreshTokenStore:
         family_id = str(uuid.uuid4())
         now = _now_iso()
 
-        # Keep the existing key layout so deployed sessions survive this change.
-        pipe = self._redis.pipeline(transaction=True)
-        pipe.hset(
-            keys.refresh_token_key(token_hash),
-            mapping={"user_id": user_id, "family_id": family_id, "issued_at": now},
-        )
-        pipe.expire(keys.refresh_token_key(token_hash), self._ttl)
-        pipe.hset(
-            keys.refresh_family_key(family_id),
-            mapping={
-                "user_id": user_id,
-                "family_id": family_id,
-                "current_token_hash": token_hash,
-                "device_label": device_label,
-                "user_agent": user_agent[:512],
-                "ip": ip,
-                "created_at": now,
-                "last_used_at": now,
-            },
-        )
-        pipe.expire(keys.refresh_family_key(family_id), self._ttl)
-        pipe.sadd(keys.refresh_user_families_key(user_id), family_id)
-        pipe.expire(keys.refresh_user_families_key(user_id), self._ttl)
-        await pipe.execute()
+        # Reuse the same unpublished credential if Redis saved the write but lost its reply.
+        # Replaying these HSET/SADD/EXPIRE commands restores one session, not a second family.
+        for attempt in range(2):
+            async with self._redis.pipeline(transaction=True) as pipe:
+                pipe.hset(
+                    keys.refresh_token_key(token_hash),
+                    mapping={"user_id": user_id, "family_id": family_id, "issued_at": now},
+                )
+                pipe.expire(keys.refresh_token_key(token_hash), self._ttl)
+                pipe.hset(
+                    keys.refresh_family_key(family_id),
+                    mapping={
+                        "user_id": user_id,
+                        "family_id": family_id,
+                        "current_token_hash": token_hash,
+                        "device_label": device_label,
+                        "user_agent": user_agent[:512],
+                        "ip": ip,
+                        "created_at": now,
+                        "last_used_at": now,
+                    },
+                )
+                pipe.expire(keys.refresh_family_key(family_id), self._ttl)
+                pipe.sadd(keys.refresh_user_families_key(user_id), family_id)
+                pipe.expire(keys.refresh_user_families_key(user_id), self._ttl)
+                try:
+                    await pipe.execute()
+                except (AuthenticationError, AuthorizationError):
+                    raise
+                except (ConnectionError, TimeoutError):
+                    if attempt == 1:
+                        raise
+                    # redis-py disconnects a failed pipeline before returning its connection.
+                    logger.warning("Redis session creation interrupted; retrying once")
+                else:
+                    break
 
         return IssuedToken(raw_token=raw_token, family_id=family_id)
 
