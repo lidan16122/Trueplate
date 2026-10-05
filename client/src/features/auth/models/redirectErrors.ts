@@ -10,8 +10,6 @@
 // print arbitrary text inside our own chrome — a convincing place to leave a
 // phone number. Anything unrecognised renders nothing.
 export const REDIRECT_ERRORS: Record<string, string | undefined> = {
-  connection:
-    "We couldn’t connect you to Google sign-in. Please try again. If this continues, try another browser or network.",
   state: "That sign-in attempt expired or was interrupted. Please try again.",
   google: "Google did not finish the sign-in.",
   exchange: "Could not reach Google to finish signing in. Please try again.",

@@ -40,26 +40,9 @@ interface Env {
 // tighter ceiling would fail the tick without stopping the wake.
 const UPSTREAM_TIMEOUT_MS = 90_000;
 
-type OAuthStage = "start" | "callback";
-const OAUTH_NAVIGATIONS = new Map<string, OAuthStage>([
-  ["/api/v1/auth/google/start", "start"],
-  ["/api/v1/auth/google/callback", "callback"],
-]);
-
-/** OAuth failures need a page the user can recover from; ordinary API calls keep JSON errors. */
-function errorResponse(status: number, detail: string, oauthStage?: OAuthStage): Response {
-  if (oauthStage) {
-    // Stage and status identify the failing hop without recording OAuth queries or cookies.
-    console.warn("google-sign-in-proxy", { stage: oauthStage, status });
-    return new Response(null, {
-      status: 303,
-      headers: {
-        location: "/signin?error=connection",
-        "cache-control": "no-store",
-      },
-    });
-  }
-
+/** Match the API's JSON error shape, read by `readErrorMessage` in src/services/http.ts.
+ *  This keeps upstream failures readable in the client. */
+function errorResponse(status: number, detail: string): Response {
   return new Response(JSON.stringify({ detail }), {
     status,
     headers: { "content-type": "application/json" },
@@ -69,7 +52,6 @@ function errorResponse(status: number, detail: string, oauthStage?: OAuthStage):
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const oauthStage = request.method === "GET" ? OAUTH_NAVIGATIONS.get(url.pathname) : undefined;
 
     // `run_worker_first` should mean only /api/* ever reaches this Worker, but
     // the asset path is the correct answer for anything else that does — a
@@ -83,7 +65,7 @@ export default {
     // which the client then tries to parse as JSON. That is the single most
     // confusing failure this file could produce, so it is the one ruled out.
     if (!env.API_ORIGIN) {
-      return errorResponse(500, "API_ORIGIN is not configured on the Worker", oauthStage);
+      return errorResponse(500, "API_ORIGIN is not configured on the Worker");
     }
 
     let target: URL;
@@ -94,7 +76,7 @@ export default {
       target = new URL(url.pathname + url.search, env.API_ORIGIN);
       apiOrigin = new URL(env.API_ORIGIN).origin;
     } catch {
-      return errorResponse(500, "API_ORIGIN is not a valid origin", oauthStage);
+      return errorResponse(500, "API_ORIGIN is not a valid origin");
     }
 
     let response: Response;
@@ -110,15 +92,8 @@ export default {
       // Gateway status codes distinguish upstream failure from an invalid request.
       const timedOut = error instanceof Error && error.name === "TimeoutError";
       return timedOut
-        ? errorResponse(504, "The API did not respond in time", oauthStage)
-        : errorResponse(502, "The API could not be reached", oauthStage);
-    }
-
-    // Both OAuth routes always redirect, including handled failures; HTML here is a proxy page.
-    const location = response.headers.get("location");
-    const isRedirect = [301, 302, 303, 307, 308].includes(response.status) && location;
-    if (oauthStage && !isRedirect) {
-      return errorResponse(response.status, "Sign-in could not be completed", oauthStage);
+        ? errorResponse(504, "The API did not respond in time")
+        : errorResponse(502, "The API could not be reached");
     }
 
     // `manual` stops the Worker following a redirect; it does not rewrite the
@@ -126,6 +101,7 @@ export default {
     // the API's host — so handing that to the browser would move it off this
     // origin and strand the cookies, which is the whole failure this file exists
     // to prevent. Rewriting the Location back to a path keeps a redirect here.
+    const location = response.headers.get("location");
     if (location) {
       const resolved = new URL(location, target);
       const rewritten = resolved.pathname + resolved.search + resolved.hash;
